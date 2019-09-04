@@ -4,6 +4,7 @@ import numpy as np
 from sklearn import preprocessing
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from math import sqrt
+import seaborn as sns
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
@@ -757,3 +758,6 @@ for i in range(0, len(chol_prediction)):
 
 # Supply prediction back to appropriate patient
 hungarian.loc[hungarian[y_variable]==-9, 'chol'] = chol_prediction
+
+# Set y variable to 0-1 range (as previous studies have done)
+hungarian.loc[hungarian.num>0, "num"] = 1
