@@ -1,5 +1,3 @@
-######## Delete dummy
-
 import pandas as pd
 import os
 from sklearn import preprocessing
@@ -9,7 +7,7 @@ from scipy import stats
 import datetime as dt
 import statsmodels.api as sm
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
@@ -720,7 +718,7 @@ print(f"The alpha value for use in hypothesis tests is {strong_alpha_value}.")
 ### Exploratory data analysis ###
 import seaborn as sns
 from sklearn.linear_model import LogisticRegression
-import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split, GridSearchCV, ShuffleSplit
 from sklearn.metrics import confusion_matrix
 from sklearn.neighbors import KNeighborsClassifier
@@ -731,6 +729,7 @@ from sklearn.svm import SVC
 import statsmodels.api as sm
 import itertools
 from scipy.stats import kurtosis, skew, normaltest, boxcox
+import matplotlib.pyplot as plt
 
 # Set aesthetic parameters
 sns.set()
@@ -746,6 +745,8 @@ categorical_variables = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', '
 # Target variable
 target_variable = 'num'
 
+### Create PCA variable from rldv5 and rldv5e
+PCA(n_components=1).fit_transform(hungarian[['rldv5', 'rldv5e']])
 
 # Heatmap of correlations
 sns.heatmap(hungarian[continuous_variables].corr())
@@ -900,8 +901,7 @@ model = model.drop(columns=['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgm
 # Drop to see if error goes away
 model = model.drop(columns=['rldv5', 'lvx3', 'lvx4', 'lvf', 'pro', 'proto'])
 # Dummy variable categorical variables
-model = pd.get_dummies(data=model, columns=categorical_variables[:-7] + [categorical_variables[-6]] + [categorical_variables[-4]], drop_first=True)
-
+model = pd.get_dummies(data=model, columns=categorical_variables[:-7] + [categorical_variables[-6]] + [categorical_variables[-4]], drop_first=False)
 # Create target variable
 y = model['num']
 # Create feature variables
@@ -1098,7 +1098,7 @@ while True:
 
 
 
-### Support vector machine
+### Support-vector machine classifer
 # Standard scale continuous variables
 scaler = StandardScaler()
 
@@ -1107,31 +1107,175 @@ x_std = x.copy()
 
 x_std.loc[:, 'age':'days_between_c_ekg'] = scaler.fit_transform(x_std.loc[:, 'age':'days_between_c_ekg'])
 
-svc_model = SVC()
-param_grid = {'kernel': ['rbf', 'sigmoid', 'linear'],'C': np.arange(0.10, 2.21, step=0.1), 'gamma': ['scale', 'auto']}
+# Define parameters of SVC
+svc_model = SVC(kernel='linear')
+# Recursive feature elimination
+rfe_svc = pd.DataFrame(data=[list(x_std), RFE(svc_model, n_features_to_select=1).fit(x_std, y).ranking_.tolist()]).T.\
+    rename(columns={0: 'variable', 1: 'rfe_ranking'}).sort_values(by='rfe_ranking').reset_index(drop=True)
 
+svc_model = SVC(random_state=1)
+param_grid = {'kernel': ['rbf', 'sigmoid', 'linear'], 'C': np.arange(0.10, 2.21, step=0.1), 'gamma': ['scale', 'auto']}
 cv = ShuffleSplit(n_splits=5, test_size=0.3)
-
+# Define grid search CV parameters
 grid_search = GridSearchCV(svc_model, param_grid, cv=cv) # , scoring='recall'
-grid_search.fit(x_std, y)
-print(grid_search.best_params_, grid_search.best_score_)
+
+model_search_list_svc = []
+# # Loop through features based on recursive feature elimination evaluation - top to bottom
+# grid_search.fit(x_std, y)
+# print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+# print(f'Best score for current grid seach: {grid_search.best_score_}')
+# # Define parameters of Support-vector machine classifer from grid search
+# svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
+#                 gamma=grid_search.best_params_['gamma'], random_state=1)
+# # Cross-validate and predict using Support-vector machine classifer
+# svc_predict = cross_val_predict(svc_model, x_std, y, cv=5)
+# print(confusion_matrix(y_true=y, y_pred=svc_predict))
+# conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
+# model_search_list_svc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0], conf_matr[0][1],
+#                          conf_matr[1][0], conf_matr[1][1], list(x_std)])
+# Begin top to bottom process - looking at most important variables (by RFE ranking first and adding on)
+svc_variable_list = []
+for i in range(len(rfe_svc)):
+    if rfe_svc['variable'][i] not in svc_variable_list:
+        svc_variable_list.extend([rfe_svc['variable'][i]])
+        # Add related one-hot encoded variables if variable is categorical
+        if len(svc_variable_list[-1].split('_')) == 2:
+            svc_variable_list.extend([var for var in list(x_std) if svc_variable_list[-1].split('_')[0] in var and var != svc_variable_list[-1]])
+            print(svc_variable_list)
+            grid_search.fit(x_std[svc_variable_list], y)
+            print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+            print(f'Best score for current grid seach: {grid_search.best_score_}')
+            # Define parameters of Support-vector machine classifer from grid search
+            svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
+                            gamma=grid_search.best_params_['gamma'], random_state=1)
+            # Cross-validate and predict using Support-vector machine classifer
+            svc_predict = cross_val_predict(svc_model, x_std[svc_variable_list], y, cv=5)
+            print(confusion_matrix(y_true=y, y_pred=svc_predict))
+            conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
+            model_search_list_svc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
+                                     conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], svc_variable_list])
+        else:
+            print(svc_variable_list)
+            grid_search.fit(x_std[svc_variable_list], y)
+            print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+            print(f'Best score for current grid seach: {grid_search.best_score_}')
+            # Define parameters of Support-vector machine classifer from grid search
+            svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
+                            gamma=grid_search.best_params_['gamma'], random_state=1)
+            # Cross-validate and predict using Support-vector machine classifer
+            svc_predict = cross_val_predict(svc_model, x_std[svc_variable_list], y, cv=5)
+            print(confusion_matrix(y_true=y, y_pred=svc_predict))
+            conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
+            model_search_list_svc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
+                                     conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], svc_variable_list])
 
 svc_model = SVC(kernel='rbf', C=1.1, gamma='scale')
 svc_predict = cross_val_predict(svc_model, x_std, y, cv=5)
 print(confusion_matrix(y_true=y, y_pred=svc_predict))
 
 ### K-Nearest Neighbors
+
+# Use Recursive Feature Elimination from SVC
+# Define parameters of SVC
+svc_model = SVC(kernel='linear', random_state=1)
+# Feature importance DataFrame
+feature_info = pd.DataFrame(data=[list(x_std), RFE(svc_model, n_features_to_select=1).fit(x_std, y).ranking_.tolist()]).T.\
+    rename(columns={0: 'variable', 1: 'rfe_svc'}).reset_index(drop=True)
+
+# Define parameters of Random Forest Classifier
+random_forest_model = RandomForestClassifier(random_state=1)
+# Merge feature importances from random forest classifer on feature_info
+feature_info = feature_info.merge(pd.DataFrame(data=[list(x), random_forest_model.fit(x,y).feature_importances_.tolist()]).T.\
+    rename(columns={0: 'variable', 1: 'feature_importance_rfc'}), on='variable')
+
+# Sort values by descending random forest classifier feature importance to create ranking column
+feature_info = feature_info.sort_values(by='feature_importance_rfc', ascending=False)
+feature_info['feature_importance_rfc_ranking'] = np.arange(1,len(feature_info)+1)
+
+# Define parameters of Gradient Boosting Classifier
+gbm_model = GradientBoostingClassifier(random_state=1)
+# Merge feature importances from gradient boosting classifer on feature_info
+feature_info = feature_info.merge(pd.DataFrame(data=[list(x), gbm_model.fit(x,y).feature_importances_.tolist()]).T.\
+    rename(columns={0: 'variable', 1: 'feature_importance_gbm'}), on='variable')
+
+# Sort values by descending gradient boosting classifier feature importance to create ranking column
+feature_info = feature_info.sort_values(by='feature_importance_gbm', ascending=False)
+feature_info['feature_importance_gbm_ranking'] = np.arange(1,len(feature_info)+1)
+
+# Get average of three RFE/feature importance columns
+feature_info['feature_importance_avg'] = feature_info[['rfe_svc', 'feature_importance_rfc_ranking', 'feature_importance_gbm_ranking']].mean(axis=1)
+# Sort values by average column
+feature_info = feature_info.sort_values(by='feature_importance_avg', ascending=True).reset_index(drop=True)
+
 # Define parameters of kNN model
 knn_model = KNeighborsClassifier(metric='minkowski')
+# Define parameters of grid search
 param_grid = {'n_neighbors': np.arange(9, 35, step=2), 'weights': ['uniform', 'distance']}
-
+# Define parameters of shuffle split
 cv = ShuffleSplit(n_splits=5, test_size=0.3)
 
-grid_search = GridSearchCV(knn_model, param_grid, cv=cv, scoring='recall')
-grid_search.fit(x_std, y)
+# Define grid search CV parameters
+grid_search = GridSearchCV(knn_model, param_grid, cv=cv) # , scoring='recall'
+
+# Append model results to this list
+model_search_list_knn = []
+# Begin top to bottom process - looking at most important variables (by RFE ranking first and adding on)
+knn_variable_list = []
+for i in range(len(feature_info)):
+    if feature_info['variable'][i] not in knn_variable_list:
+        knn_variable_list.extend([feature_info['variable'][i]])
+        # Add related one-hot encoded variables if variable is categorical
+        if len(knn_variable_list[-1].split('_')) == 2:
+            knn_variable_list.extend([var for var in list(x_std) if knn_variable_list[-1].split('_')[0] in var and var != knn_variable_list[-1]])
+            print(knn_variable_list)
+            grid_search.fit(x_std[knn_variable_list], y)
+            print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+            print(f'Best score for current grid seach: {grid_search.best_score_}')
+            # Define parameters of Support-vector machine classifer from grid search
+            knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=grid_search.best_params_['n_neighbors'],
+                            weights=grid_search.best_params_['weights'])
+            # Cross-validate and predict using Support-vector machine classifer
+            knn_predict = cross_val_predict(knn_model, x_std[knn_variable_list], y, cv=5)
+            print(confusion_matrix(y_true=y, y_pred=knn_predict))
+            conf_matr = confusion_matrix(y_true=y, y_pred=knn_predict)
+            model_search_list_knn.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
+                                     conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], knn_variable_list])
+        else:
+            print(knn_variable_list)
+            grid_search.fit(x_std[knn_variable_list], y)
+            print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+            print(f'Best score for current grid seach: {grid_search.best_score_}')
+            # Define parameters of Support-vector machine classifer from grid search
+            knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=grid_search.best_params_['n_neighbors'],
+                            weights=grid_search.best_params_['weights'])
+            # Cross-validate and predict using Support-vector machine classifer
+            knn_predict = cross_val_predict(knn_model, x_std[knn_variable_list], y, cv=5)
+            print(confusion_matrix(y_true=y, y_pred=knn_predict))
+            conf_matr = confusion_matrix(y_true=y, y_pred=knn_predict)
+            model_search_list_knn.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
+                                     conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], knn_variable_list])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+grid_search.fit(x_std[['exang_0', 'exang_1']], y)
 print(grid_search.best_params_, grid_search.best_score_)
 
-knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=27, weights='distance')
+knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=33, weights='uniform')
 knn_predict = cross_val_predict(knn_model, x_std, y, cv=5)
 print(confusion_matrix(y_true=y, y_pred=knn_predict))
 
