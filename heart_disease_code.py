@@ -18,6 +18,7 @@ from sklearn.svm import SVC
 from sklearn.exceptions import ConvergenceWarning
 import statsmodels.api as sm
 import itertools
+import inflect
 # import seaborn as sns
 # import matplotlib.pyplot as plt
 
@@ -889,146 +890,303 @@ hungarian['trestbps_boxcox'] = stats.boxcox(x=hungarian.trestbps)[0]
 hungarian['chol_boxcox'] = stats.boxcox(x=hungarian.chol)[0]
 hungarian['thalrest_boxcox'] = stats.boxcox(x=hungarian.thalrest)[0]
 
+# Feature engineering
+hungarian["thalach_div_by_thalrest"] = hungarian["thalach"]/hungarian["thalrest"]
+hungarian["tpeakbps_div_by_tpeakbpd"] = hungarian["tpeakbps"]/hungarian["tpeakbpd"]
+hungarian["thaldur_div_by_met"] = hungarian["thaldur"]/hungarian["met"]
+hungarian["chol_div_by_age"] = hungarian["chol"]/hungarian["age"]
+hungarian["chol_div_by_met"] = hungarian["chol"]/hungarian["met"]
+hungarian["chol_div_by_thalach"] = hungarian["chol"]/hungarian["thalach"]
+hungarian["chol_div_by_thalrest"] = hungarian["chol"]/hungarian["thalrest"]
+hungarian["thalrest_div_by_rldv5"] = hungarian["thalrest"]/hungarian["rldv5"]
+hungarian["thalach_div_by_rldv5e"] = hungarian["thalrest"]/hungarian["rldv5e"]
+
+hungarian["trestbps_boxcox_div_by_tpeakbpd"] = hungarian["trestbps_boxcox"]/hungarian["tpeakbpd"]
+
+hungarian["chol_boxcox_div_by_age"] = hungarian["chol_boxcox"]/hungarian["age"]
+hungarian["chol_boxcox_div_by_met"] = hungarian["chol_boxcox"]/hungarian["met"]
+hungarian["chol_boxcox_div_by_thalach"] = hungarian["chol_boxcox"]/hungarian["thalach"]
+hungarian["chol_boxcox_div_by_thalrest"] = hungarian["chol_boxcox"]/hungarian["thalrest"]
+
+hungarian["thalach_div_by_thalrest_boxcox"] = hungarian["thalach"]/hungarian["thalrest_boxcox"]
+hungarian["chol_div_by_thalrest_boxcox"] = hungarian["chol"]/hungarian["thalrest_boxcox"]
+hungarian["thalrest_boxcox_div_by_rldv5"] = hungarian["thalrest_boxcox"]/hungarian["rldv5"]
+# Bin age
+hungarian['agebinned'] = pd.cut(x=hungarian.age, bins=5, labels = ['0', '1', '2', '3', '4'])
+
 ############## Plot results form each model run on ROC Curve to better observe best cut-off value ######################
+# Create empty DataFrame to append all model results to
+all_model_results = pd.DataFrame()
+# Create DataFrame to append top model results to
+top_model_results = pd.DataFrame(columns=['solver', 'best_model_params_grid_search', 'best_score_grid_search',
+                                          'true_negatives', 'false_positives', 'false_negatives', 'true_positives',
+                                          'recall', 'precision', 'f1_score', 'variables_not_used', 'variables_used',
+                                          'model_params_grid_search'])
+
 # Create copy of hungarian for regression modeling
 model = hungarian.copy()
+
 # Drop columns
-model = model.drop(columns=['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday',
-                            'ekg_date', 'cardiac_cath_date', 'rldv5', 'lvx3', 'lvx4', 'lvf', 'pro', 'proto',
-                            'rldv5_rldv5e_pca'])
-# Dummy variable categorical variables
-model = pd.get_dummies(data=model, columns=categorical_variables[:-7] + [categorical_variables[-6]] + [categorical_variables[-4]], drop_first=True)
-# Create target variable
-y = model['num']
-# Create feature variables
-x = model.drop(columns='num')
+variables_to_drop_for_modeling_one = ['id', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday', 'lvx3', 'lvx4', 'lvf',
+                                      'proto', 'ekg_date', 'cardiac_cath_date', 'rldv5_rldv5e_pca',
+                                      'days_between_c_ekg', 'trestbps_boxcox', 'chol_boxcox', 'thalrest_boxcox',
+                                      'thalach_div_by_thalrest', 'tpeakbps_div_by_tpeakbpd', 'thaldur_div_by_met',
+                                      'chol_div_by_met', 'chol_div_by_thalach', 'chol_div_by_thalrest',
+                                      'chol_div_by_age', 'thalrest_div_by_rldv5', 'thalach_div_by_rldv5e', 'agebinned',
+                                      'trestbps_boxcox_div_by_tpeakbpd', 'chol_boxcox_div_by_age',
+                                      'chol_boxcox_div_by_met', 'chol_boxcox_div_by_thalach',
+                                      'chol_boxcox_div_by_thalrest', 'thalach_div_by_thalrest_boxcox',
+                                      'chol_div_by_thalrest_boxcox', 'thalrest_boxcox_div_by_rldv5']
+# Define categorical variables
+categorical_variables_for_modeling_one = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg',
+                                          'prop', 'nitr', 'pro', 'diuretic', 'exang']
 
-# Obtain recursive feature elimination values for all solvers and get average
-# (not sure what to do about ConvergenceWarning - get warning but also get result for each solver)
-rfe_logit = pd.DataFrame(data=list(x), columns=['variable'])
-for solve in ['liblinear', 'newton-cg', 'lbfgs', 'sag', 'saga']:
-    rfe_logit = rfe_logit.merge(pd.DataFrame(data=[list(x), RFE(LogisticRegression(solver=solve, max_iter=100),
-                n_features_to_select=1).fit(x, y).ranking_.tolist()]).T.rename(columns={0: 'variable', 1:
-                'rfe_ranking_' + solve}), on='variable')
-# Get average ranking for each variable
-rfe_logit['rfe_ranking_avg'] = rfe_logit[['rfe_ranking_liblinear', 'rfe_ranking_newton-cg', 'rfe_ranking_lbfgs',
-                                          'rfe_ranking_sag', 'rfe_ranking_saga']].mean(axis=1)
-# Sort DataFrame
-rfe_logit = rfe_logit.sort_values(by='rfe_ranking_avg', ascending=True).reset_index(drop=True)
 
-# Train/test split
-x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33, random_state=43)
-# Run models - start at top and add variables with each iteration
+# Drop columns
+variables_to_drop_for_modeling_two = ['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo',
+                                      'cday', 'ekg_date', 'cardiac_cath_date', 'rldv5', 'lvx3', 'lvx4', 'lvf', 'pro',
+                                      'proto', 'rldv5_rldv5e_pca', 'thalach_div_by_thalrest',
+                                      'tpeakbps_div_by_tpeakbpd', 'thaldur_div_by_met', 'chol_div_by_met',
+                                      'chol_div_by_thalach', 'chol_div_by_thalrest', 'chol_div_by_age',
+                                      'thalrest_div_by_rldv5', 'thalach_div_by_rldv5e', 'agebinned',
+                                      'trestbps_boxcox_div_by_tpeakbpd', 'chol_boxcox_div_by_age',
+                                      'chol_boxcox_div_by_met', 'chol_boxcox_div_by_thalach',
+                                      'chol_boxcox_div_by_thalrest', 'thalach_div_by_thalrest_boxcox',
+                                      'chol_div_by_thalrest_boxcox', 'thalrest_boxcox_div_by_rldv5']
+# Define categorical variables
+categorical_variables_for_modeling_two = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg',
+                                          'prop', 'nitr', 'diuretic', 'exang']
 
-# Test 'weaker' alpha value
-strong_alpha_value = 0.04
-model_search_logit = []
-logit_variable_list = []
-insignificant_variables_list = []
-for i in range(len(rfe_logit)):
-    if rfe_logit['variable'][i] not in logit_variable_list and rfe_logit['variable'][i] not in insignificant_variables_list:
-        logit_variable_list.extend([rfe_logit['variable'][i]])
-        # logit_variable_list = list(set(logit_variable_list).difference(set(insignificant_variables_list)))
-        logit_variable_list = [x for x in logit_variable_list if x not in insignificant_variables_list]
-        print(logit_variable_list)
-        # Add related one-hot encoded variables if variable is categorical
-        if logit_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x)])) if len(x) == 1]):
-            logit_variable_list.extend([var for var in list(x) if logit_variable_list[-1].split('_')[0] in var and var != logit_variable_list[-1]])
+# Drop columns
+variables_to_drop_for_modeling_three = ['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo',
+                                      'cday', 'ekg_date', 'cardiac_cath_date', 'lvx3', 'lvx4', 'lvf', 'proto',
+                                      'rldv5_rldv5e_pca', 'thalach_div_by_thalrest',
+                                      'tpeakbps_div_by_tpeakbpd', 'thaldur_div_by_met', 'chol_div_by_met',
+                                      'chol_div_by_thalach', 'chol_div_by_thalrest', 'chol_div_by_age',
+                                      'thalrest_div_by_rldv5', 'thalach_div_by_rldv5e', 'agebinned',
+                                      'trestbps_boxcox_div_by_tpeakbpd', 'chol_boxcox_div_by_age',
+                                      'chol_boxcox_div_by_met', 'chol_boxcox_div_by_thalach',
+                                      'chol_boxcox_div_by_thalrest', 'thalach_div_by_thalrest_boxcox',
+                                      'chol_div_by_thalrest_boxcox', 'thalrest_boxcox_div_by_rldv5']
+
+# Define categorical variables
+categorical_variables_for_modeling_three = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop',
+                                          'nitr', 'diuretic', 'exang', 'pro']
+
+# Drop columns
+variables_to_drop_for_modeling_four = ['id', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday', 'lvx3', 'lvx4', 'lvf',
+                                      'proto', 'ekg_date', 'cardiac_cath_date', 'rldv5', 'rldv5e', 'trestbps_boxcox',
+                                       'chol_boxcox', 'thalrest_boxcox', 'agebinned',
+                                       'trestbps_boxcox_div_by_tpeakbpd', 'chol_boxcox_div_by_age',
+                                       'chol_boxcox_div_by_met', 'chol_boxcox_div_by_thalach',
+                                       'chol_boxcox_div_by_thalrest', 'thalach_div_by_thalrest_boxcox',
+                                       'chol_div_by_thalrest_boxcox', 'thalrest_boxcox_div_by_rldv5']
+# Define categorical variables
+categorical_variables_for_modeling_four = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop',
+                                          'nitr', 'diuretic', 'exang', 'pro']
+
+# Drop columns
+variables_to_drop_for_modeling_five = ['id', 'age', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday', 'lvx3', 'lvx4', 'lvf',
+                                      'proto', 'ekg_date', 'cardiac_cath_date','rldv5_rldv5e_pca', 'trestbps_boxcox',
+                                       'chol_boxcox', 'thalrest_boxcox', 'trestbps_boxcox_div_by_tpeakbpd',
+                                       'chol_boxcox_div_by_age', 'chol_boxcox_div_by_met', 'chol_boxcox_div_by_thalach',
+                                       'chol_boxcox_div_by_thalrest', 'thalach_div_by_thalrest_boxcox',
+                                       'chol_div_by_thalrest_boxcox', 'thalrest_boxcox_div_by_rldv5']
+
+# Define categorical variables
+categorical_variables_for_modeling_five = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop',
+                                          'nitr', 'diuretic', 'exang', 'pro', 'agebinned']
+
+# Drop columns
+variables_to_drop_for_modeling_six = ['id', 'age', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr',
+                                      'cmo', 'cday', 'lvx3', 'lvx4', 'lvf',
+                                      'proto', 'ekg_date', 'cardiac_cath_date','rldv5_rldv5e_pca',
+                                      'thalach_div_by_thalrest', 'tpeakbps_div_by_tpeakbpd', 'thaldur_div_by_met',
+                                      'chol_div_by_met', 'chol_div_by_thalach', 'chol_div_by_thalrest',
+                                      'chol_div_by_age', 'thalrest_div_by_rldv5', 'thalach_div_by_rldv5e']
+
+# Define categorical variables
+categorical_variables_for_modeling_six = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop',
+                                          'nitr', 'diuretic', 'exang', 'pro', 'agebinned']
+
+# Drop columns
+variables_to_drop_for_modeling_seven = ['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr',
+                                      'cmo', 'cday', 'lvx3', 'lvx4', 'lvf',
+                                      'proto', 'ekg_date', 'cardiac_cath_date','rldv5_rldv5e_pca',
+                                      'thalach_div_by_thalrest', 'tpeakbps_div_by_tpeakbpd', 'thaldur_div_by_met',
+                                      'chol_div_by_met', 'chol_div_by_thalach', 'chol_div_by_thalrest',
+                                      'chol_div_by_age', 'thalrest_div_by_rldv5', 'thalach_div_by_rldv5e', 'agebinned']
+
+# Define categorical variables
+categorical_variables_for_modeling_seven = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop',
+                                          'nitr', 'diuretic', 'exang', 'pro']
+
+# Make list of lists for variables to drop
+variables_to_drop_list = [variables_to_drop_for_modeling_one, variables_to_drop_for_modeling_two,
+                          variables_to_drop_for_modeling_three, variables_to_drop_for_modeling_four,
+                          variables_to_drop_for_modeling_five,variables_to_drop_for_modeling_six,
+                          variables_to_drop_for_modeling_seven]
+
+# Make list of lists for categorical variables to model
+categorical_variables_for_modeling_list = [categorical_variables_for_modeling_one,
+                                           categorical_variables_for_modeling_two,
+                                           categorical_variables_for_modeling_three,
+                                           categorical_variables_for_modeling_four,
+                                           categorical_variables_for_modeling_five,
+                                           categorical_variables_for_modeling_six,
+                                           categorical_variables_for_modeling_seven]
+
+
+
+# Unique variable combination runs
+for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
+                                                              categorical_variables_for_modeling_list), start=1):
+    print(index)
+    # Create copy of hungarian for regression modeling
+    model = hungarian.copy()
+    # Drop variables
+    model = model.drop(columns=vars_to_drop)
+    # Dummy variable categorical variables
+    model = pd.get_dummies(data=model, columns=cat_vars_to_model, drop_first=True)
+    # Create target variable
+    y = model['num']
+    # Create feature variables
+    x = model.drop(columns='num')
+
+    # Obtain recursive feature elimination values for all solvers and get average
+    # (not sure what to do about ConvergenceWarning - get warning but also get result for each solver)
+    rfe_logit = pd.DataFrame(data=list(x), columns=['variable'])
+    for solve in ['liblinear', 'newton-cg', 'lbfgs', 'sag', 'saga']:
+        rfe_logit = rfe_logit.merge(pd.DataFrame(data=[list(x), RFE(LogisticRegression(solver=solve, max_iter=100),
+                    n_features_to_select=1).fit(x, y).ranking_.tolist()]).T.rename(columns={0: 'variable', 1:
+                    'rfe_ranking_' + solve}), on='variable')
+    # Get average ranking for each variable
+    rfe_logit['rfe_ranking_avg'] = rfe_logit[['rfe_ranking_liblinear', 'rfe_ranking_newton-cg', 'rfe_ranking_lbfgs',
+                                              'rfe_ranking_sag', 'rfe_ranking_saga']].mean(axis=1)
+    # Sort DataFrame
+    rfe_logit = rfe_logit.sort_values(by='rfe_ranking_avg', ascending=True).reset_index(drop=True)
+
+    # Train/test split
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33, random_state=43)
+    # Run models - start at top and add variables with each iteration
+    # Test 'weaker' alpha value
+    strong_alpha_value = 0.04
+    model_search_logit = []
+    logit_variable_list = []
+    insignificant_variables_list = []
+    for i in range(len(rfe_logit)):
+        if rfe_logit['variable'][i] not in logit_variable_list and rfe_logit['variable'][i] not in insignificant_variables_list:
+            logit_variable_list.extend([rfe_logit['variable'][i]])
+            # logit_variable_list = list(set(logit_variable_list).difference(set(insignificant_variables_list)))
+            logit_variable_list = [x for x in logit_variable_list if x not in insignificant_variables_list]
             print(logit_variable_list)
-        # Build logistic regression
-        sm_logistic = sm.Logit(y_train, x_train[logit_variable_list]).fit()
-        # All p-values are significant
-        if all(p_values < strong_alpha_value for p_values in sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values):
-            print("-----------")
-            print((sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
-                                     sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist()))
-            print("-----------")
-            print("-----------")
-            model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
-                                    (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
-                                    (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
-                                    (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
-                                    (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
-                                    (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
-                                    (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
-                                    (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
-                                     sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
-        # P-value(s) of particular variable(s) is not significant
-        elif any(p_values > strong_alpha_value for p_values in sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values):
-            print('*********')
-            print(logit_variable_list[-1])
-            print('*********')
+            # Add related one-hot encoded variables if variable is categorical
             if logit_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x)])) if len(x) == 1]):
-                cat_var_level_check = sm_logistic.summary2().tables[1]._getitem_column("P>|z|")[sm_logistic.summary2().
-                    tables[1]._getitem_column("P>|z|").index.isin([var for var in list(x) if
-                                                                   logit_variable_list[-1].split('_')[0] in var])]
-                # If True, at least one level of the categorical variable is significant so keep all levels of variable
-                if any(p_values < strong_alpha_value for p_values in cat_var_level_check.values):
-                    model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
-                                    (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
-                                    (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
-                                    (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
-                                    (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
-                                    (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
-                                    (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
-                                    (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
-                                     sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
-                # Else False - remove all levels of categorical variable
-                else:
-                    print("!!!!!!!!!!!!!!!!!!!!!")
-                    print(sm_logistic.summary2())
-                    insignificant_variables_list.extend(cat_var_level_check.index)
-            else:
-                print('&&&&&&&&&&&&&')
-                print(sm_logistic.summary2())
+                logit_variable_list.extend([var for var in list(x) if logit_variable_list[-1].split('_')[0] in var and var != logit_variable_list[-1]])
+                print(logit_variable_list)
+            # Build logistic regression
+            sm_logistic = sm.Logit(y_train, x_train[logit_variable_list]).fit()
+            # All p-values are significant
+            if all(p_values < strong_alpha_value for p_values in sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values):
+                print("-----------")
+                print((sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
+                                         sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist()))
+                print("-----------")
+                print("-----------")
+                model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
+                                        (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
+                                        (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
+                                        (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
+                                        (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
+                                        (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
+                                        (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
+                                        (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
+                                         sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
+            # P-value(s) of particular variable(s) is not significant
+            elif any(p_values > strong_alpha_value for p_values in sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values):
+                print('*********')
                 print(logit_variable_list[-1])
-                cont_var_check = sm_logistic.summary2().tables[1]._getitem_column("P>|z|")[sm_logistic.summary2().
-                    tables[1]._getitem_column("P>|z|").index.isin([logit_variable_list[-1]])]
-                # Continuous variable is significant
-                if cont_var_check.values[0] < strong_alpha_value:
-                    model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
-                                    (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
-                                    (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
-                                    (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
-                                    (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
-                                    (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
-                                    (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
-                                    (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
-                                     sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
+                print('*********')
+                if logit_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x)])) if len(x) == 1]):
+                    cat_var_level_check = sm_logistic.summary2().tables[1]._getitem_column("P>|z|")[sm_logistic.summary2().
+                        tables[1]._getitem_column("P>|z|").index.isin([var for var in list(x) if
+                                                                       logit_variable_list[-1].split('_')[0] in var])]
+                    # If True, at least one level of the categorical variable is significant so keep all levels of variable
+                    if any(p_values < strong_alpha_value for p_values in cat_var_level_check.values):
+                        model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
+                                        (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
+                                        (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
+                                        (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
+                                        (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
+                                        (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
+                                        (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
+                                        (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
+                                         sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
+                    # Else False - remove all levels of categorical variable
+                    else:
+                        print("!!!!!!!!!!!!!!!!!!!!!")
+                        print(sm_logistic.summary2())
+                        insignificant_variables_list.extend(cat_var_level_check.index)
                 else:
-                    print('^^^^^^^^^^^^^')
+                    print('&&&&&&&&&&&&&')
+                    print(sm_logistic.summary2())
                     print(logit_variable_list[-1])
-                    insignificant_variables_list.append(logit_variable_list[-1])
-# Create DataFrame of logisitic regression results
-model_search_logit = pd.DataFrame(model_search_logit, columns = ['converged', 'pseudo_r_squared', 'aic', 'bic',
-                                            'log_likelihood', 'll_null', 'llr_p_value', 'columns_significance'])
-model_results_logit = []
-for solve in ['liblinear', 'newton-cg', 'lbfgs', 'sag', 'saga']:
-    for col in model_search_logit['columns_significance']:
-        print(solve, col[0])
-        try:
-            logit_predict = cross_val_predict(LogisticRegression(solver=solve, max_iter=100), x[col[0]], y, cv=5)
-            print(confusion_matrix(y_true=y, y_pred=logit_predict))
-            conf_matr = confusion_matrix(y_true=y, y_pred=logit_predict)
-            model_results_logit.append([solve, col[0], conf_matr[0][0], conf_matr[0][1], conf_matr[1][0], conf_matr[1][1]])
-        except ConvergenceWarning:
-            print("#############")
-# Create DataFrame of results
-model_results_logit = pd.DataFrame(model_results_logit, columns = ['solver', 'cols', 'true_negatives', 'false_positives',
-                                             'false_negatives', 'true_positives'])
-# Create recall, precision, and f1-score columns
-model_results_logit['recall'] = model_results_logit.true_positives/(model_results_logit.true_positives + model_results_logit.false_negatives)
-model_results_logit['precision'] = model_results_logit.true_positives/(model_results_logit.true_positives + model_results_logit.false_positives)
-model_results_logit['f1_score'] = 2 * (model_results_logit.precision * model_results_logit.recall) / (model_results_logit.precision + model_results_logit.recall)
-# Sort DataFrame
-model_results_logit = model_results_logit.sort_values(by=['f1_score'], ascending=False)
-print(model_results_logit)
+                    cont_var_check = sm_logistic.summary2().tables[1]._getitem_column("P>|z|")[sm_logistic.summary2().
+                        tables[1]._getitem_column("P>|z|").index.isin([logit_variable_list[-1]])]
+                    # Continuous variable is significant
+                    if cont_var_check.values[0] < strong_alpha_value:
+                        model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
+                                        (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
+                                        (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
+                                        (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
+                                        (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
+                                        (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
+                                        (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
+                                        (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
+                                         sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
+                    else:
+                        print('^^^^^^^^^^^^^')
+                        print(logit_variable_list[-1])
+                        insignificant_variables_list.append(logit_variable_list[-1])
+    # Create DataFrame of logisitic regression results
+    model_search_logit = pd.DataFrame(model_search_logit, columns = ['converged', 'pseudo_r_squared', 'aic', 'bic',
+                                                'log_likelihood', 'll_null', 'llr_p_value', 'columns_significance'])
+    model_results_logit = []
+    for solve in ['liblinear', 'newton-cg', 'lbfgs', 'sag', 'saga']:
+        for col in model_search_logit['columns_significance']:
+            print(solve, col[0])
+            try:
+                logit_predict = cross_val_predict(LogisticRegression(solver=solve, max_iter=100), x[col[0]], y, cv=5)
+                print(confusion_matrix(y_true=y, y_pred=logit_predict))
+                conf_matr = confusion_matrix(y_true=y, y_pred=logit_predict)
+                model_results_logit.append([solve, col[0], conf_matr[0][0], conf_matr[0][1], conf_matr[1][0], conf_matr[1][1]])
+            except ConvergenceWarning:
+                print("#############")
+    # Create DataFrame of results
+    model_results_logit = pd.DataFrame(model_results_logit, columns = ['solver', 'variables_used', 'true_negatives', 'false_positives',
+                                                 'false_negatives', 'true_positives'])
+    # Create recall, precision, and f1-score columns
+    model_results_logit['recall'] = model_results_logit.true_positives/(model_results_logit.true_positives + model_results_logit.false_negatives)
+    model_results_logit['precision'] = model_results_logit.true_positives/(model_results_logit.true_positives + model_results_logit.false_positives)
+    model_results_logit['f1_score'] = 2 * (model_results_logit.precision * model_results_logit.recall) / (model_results_logit.precision + model_results_logit.recall)
+    # Sort DataFrame
+    model_results_logit = model_results_logit.sort_values(by=['f1_score'], ascending=False)
+    print(model_results_logit)
 
-if len(model_results_logit.loc[model_results_logit.f1_score==model_results_logit.f1_score.max()]) > 1:
-    top_model_result_logit = model_results_logit.loc[(model_results_logit.f1_score == model_results_logit.f1_score.max()) &
-        (model_results_logit['cols'].apply(len) == min(map(lambda x: len(x[[1]][0]),
-        model_results_logit.loc[model_results_logit.f1_score==model_results_logit.f1_score.max()].values)))].sample(n=1)
+    if len(model_results_logit.loc[model_results_logit.f1_score==model_results_logit.f1_score.max()]) > 1:
+        top_model_result_logit = model_results_logit.loc[(model_results_logit.f1_score == model_results_logit.f1_score.max()) &
+            (model_results_logit['variables_used'].apply(len) == min(map(lambda x: len(x[[1]][0]),
+            model_results_logit.loc[model_results_logit.f1_score==model_results_logit.f1_score.max()].values)))].sample(n=1)
+    else:
+        top_model_result_logit = model_results_logit.loc[model_results_logit.f1_score == model_results_logit.f1_score.max()]
+    top_model_results = top_model_results.append(other= top_model_result_logit, sort=False)
+    print(f"Top logit model: \n {top_model_result_logit}")
 
+    # Append top_model_result_logit results to all_model_results DataFrame
+    logit_predict_proba = cross_val_predict(LogisticRegression(solver=top_model_result_logit["solver"].values[0],
+                                max_iter=100), x[top_model_result_logit["variables_used"].values[0]], y, cv=5, method="predict_proba")
+    all_model_results['logit_'+inflect.engine().number_to_words(index)+'_pred_zero'] = logit_predict_proba[:,0]
+    all_model_results['logit_'+inflect.engine().number_to_words(index)+'_pred_one'] = logit_predict_proba[:,1]
 
 # # Create all possible feature combinations for regression
 # variable_combinations = []
@@ -1087,545 +1245,646 @@ if len(model_results_logit.loc[model_results_logit.f1_score==model_results_logit
 
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
-logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
-                y_train).predict(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']]))
-fpr, tpr, thresholds = roc_curve(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
-                y_train).predict_proba(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']])[:,1])
-# Create DataFrame of results
-roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
-# Rename columns
-roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
-
-# ROC Curve plot
-plt.figure()
-plt.plot(fpr, tpr, label='Logistic Regression (area = %0.2f)' % logit_roc_auc)
-plt.plot([0, 1], [0, 1],'r--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('Receiver operating characteristic')
-plt.legend(loc="lower right")
-
-### Next steps: feature enginering (age/ekgyr)
-# Drop ek- and c- columns?
-# Drop lvx- and lvf?
-
-# Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
-i = np.arange(len(tpr))
-roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
-roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
-list(roc_t['threshold'])
-
-# Want high sensitivity (want to miss as few 1 patients as possible and okay to miss on a few extra 0 patients)
-# The "missed" 0's could be potential 1's in the future if conditions for them worsen
-# Optimal cut-off value from this -> fpr = 0.229508  tpr = 0.861111  threshold = 0.402949
-# DataFrame of roc curve values
-roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
-# Rename columns
-roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
-
-logistic_regression_predict = cross_val_predict(logistic_regression_model,
-                              x[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']], y, cv=5, method='predict_proba')[:,1].tolist()
-logistic_regression_predict = [1 if x >= list(roc_t['threshold'])[0] else 0 for x in logistic_regression_predict]
-
-# Create DataFrame of model predictions from all models
-model_results = pd.DataFrame()
-# Logistic Regression prediction
-model_results['logistic_regression_prediction'] = logistic_regression_predict
+# logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
+#                 y_train).predict(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']]))
+# fpr, tpr, thresholds = roc_curve(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
+#                 y_train).predict_proba(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']])[:,1])
+# # Create DataFrame of results
+# roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
+# # Rename columns
+# roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
+#
+# # ROC Curve plot
+# plt.figure()
+# plt.plot(fpr, tpr, label='Logistic Regression (area = %0.2f)' % logit_roc_auc)
+# plt.plot([0, 1], [0, 1],'r--')
+# plt.xlim([0.0, 1.0])
+# plt.ylim([0.0, 1.05])
+# plt.xlabel('False Positive Rate')
+# plt.ylabel('True Positive Rate')
+# plt.title('Receiver operating characteristic')
+# plt.legend(loc="lower right")
+#
+#
+# # Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
+# i = np.arange(len(tpr))
+# roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
+# roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
+# list(roc_t['threshold'])
+#
+# # Want high sensitivity (want to miss as few 1 patients as possible and okay to miss on a few extra 0 patients)
+# # The "missed" 0's could be potential 1's in the future if conditions for them worsen
+# # Optimal cut-off value from this -> fpr = 0.229508  tpr = 0.861111  threshold = 0.402949
+# # DataFrame of roc curve values
+# roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
+# # Rename columns
+# roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
+#
+# logistic_regression_predict = cross_val_predict(logistic_regression_model,
+#                               x[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']], y, cv=5, method='predict_proba')[:,1].tolist()
+# logistic_regression_predict = [1 if x >= list(roc_t['threshold'])[0] else 0 for x in logistic_regression_predict]
+#
+# # Create DataFrame of model predictions from all models
+# model_results = pd.DataFrame()
+# # Logistic Regression prediction
+# model_results['logistic_regression_prediction'] = logistic_regression_predict
 
 
-
-
-
-
-# Create copy of hungarian for non-regression modeling
-model = hungarian.copy()
-# Drop columns
-model = model.drop(columns=['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday',
-                            'ekg_date', 'cardiac_cath_date', 'rldv5', 'lvx3', 'lvx4', 'lvf', 'pro', 'proto',
-                            'rldv5_rldv5e_pca'])
-# Dummy variable categorical variables
-model = pd.get_dummies(data=model, columns=categorical_variables[:-7] + [categorical_variables[-6]] + [categorical_variables[-4]], drop_first=False)
-# Create target variable
-y = model['num']
-# Create feature variables
-x = model.drop(columns='num')
 
 ### Random forest classifer ###
 ### Can create ensemble models using different training sets (bagging)
+# Unique variable combination runs
+for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
+                                                              categorical_variables_for_modeling_list), start=1):
+    print(index)
+    # Create copy of hungarian for non-regression modeling
+    model = hungarian.copy()
+    # Drop columns
+    model = model.drop(columns=vars_to_drop)
+    # Dummy variable categorical variables
+    model = pd.get_dummies(data=model, columns=cat_vars_to_model, drop_first=False)
+    # Create target variable
+    y = model['num']
+    # Create feature variables
+    x = model.drop(columns='num')
 
-# Define parameters of Random Forest Classifier
-random_forest_model = RandomForestClassifier(random_state=1)
-# Define parameters for grid search
-param_grid = {'n_estimators': np.arange(10, 111, step=5), 'criterion': ['gini', 'entropy'],
-              'max_features': np.arange(2, 27, step=3)}
-cv = ShuffleSplit(n_splits=5, test_size=0.3)
+    # Define parameters of Random Forest Classifier
+    random_forest_model = RandomForestClassifier(random_state=1)
+    # Define parameters for grid search
+    param_grid = {'n_estimators': np.arange(10, 111, step=5), 'criterion': ['gini', 'entropy'],
+                  'max_features': np.arange(2, 27, step=3)}
+    cv = ShuffleSplit(n_splits=5, test_size=0.3)
 
-# Define grid search CV parameters
-grid_search = GridSearchCV(random_forest_model, param_grid, cv=cv) # , scoring='recall' # warm_start=True
-# Loop to iterate through least important variables according to random_forest_feature_importance and grid search
-x_all = list(x)
-model_search_rfc = []
-while True:
-    grid_search.fit(x, y)
-    print(f'Best parameters for current grid seach: {grid_search.best_params_}')
-    print(f'Best score for current grid seach: {grid_search.best_score_}')
-    # print(grid_search.best_params_, grid_search.best_score_) # {'criterion': 'entropy', 'max_features': 7, 'n_estimators': 15} 0.8409090909090909
-    # Define parameters of Random Forest Classifier from grid search
-    random_forest_model = RandomForestClassifier(criterion=grid_search.best_params_['criterion'],
-                                                 max_features=grid_search.best_params_['max_features'],
-                                                 n_estimators=grid_search.best_params_['n_estimators'],
-                                                 random_state=1)
-    # Cross-validate and predict using Random Forest Classifer
-    random_forest_predict = cross_val_predict(random_forest_model, x, y, cv=5)
-    print(confusion_matrix(y_true=y, y_pred=random_forest_predict))
-    conf_matr = confusion_matrix(y_true=y, y_pred=random_forest_predict)
-    model_search_rfc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0], conf_matr[0][1],
-                             conf_matr[1][0], conf_matr[1][1], set(x_all).difference(x)])
-    # Run random forest with parameters from grid search to obtain feature importances
-    random_forest_feature_importance = pd.DataFrame(data=[list(x),
-                RandomForestClassifier(criterion=grid_search.best_params_['criterion'],
-                 max_features=grid_search.best_params_['max_features'],
-                 n_estimators=grid_search.best_params_['n_estimators'], random_state=1).fit(x,y).feature_importances_.tolist()]).T.rename(columns={0:'variable',
-                 1:'importance'}).sort_values(by='importance', ascending=False)
-    print(random_forest_feature_importance)
-    if len(random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01]) > 0:
-        for i in range(1, len(random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01])+1):
-            print(f"'Worst' variable being examined: {random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01].variable.values[-i]}")
-            bottom_variable = random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01].variable.values[-i]
-            bottom_variable = bottom_variable.split('_')[0]
-            bottom_variable = [col for col in list(x) if bottom_variable in col]
-            compare_counter = 0
-            for var in bottom_variable:
-                if var in random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01].variable.values:
-                    compare_counter += 1
-            if len(bottom_variable) == compare_counter:
-                print(f"Following variable(s) will be dropped from x {bottom_variable}")
-                x = x.drop(columns=bottom_variable)
-                break
+    # Define grid search CV parameters
+    grid_search = GridSearchCV(random_forest_model, param_grid, cv=cv) # , scoring='recall' # warm_start=True
+    # Loop to iterate through least important variables according to random_forest_feature_importance and grid search
+    x_all = list(x)
+    model_search_rfc = []
+    while True:
+        grid_search.fit(x, y)
+        print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+        print(f'Best score for current grid seach: {grid_search.best_score_}')
+        # print(grid_search.best_params_, grid_search.best_score_) # {'criterion': 'entropy', 'max_features': 7, 'n_estimators': 15} 0.8409090909090909
+        # Define parameters of Random Forest Classifier from grid search
+        random_forest_model = RandomForestClassifier(criterion=grid_search.best_params_['criterion'],
+                                                     max_features=grid_search.best_params_['max_features'],
+                                                     n_estimators=grid_search.best_params_['n_estimators'],
+                                                     random_state=1)
+        # Cross-validate and predict using Random Forest Classifer
+        random_forest_predict = cross_val_predict(random_forest_model, x, y, cv=5)
+        print(confusion_matrix(y_true=y, y_pred=random_forest_predict))
+        conf_matr = confusion_matrix(y_true=y, y_pred=random_forest_predict)
+        model_search_rfc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0], conf_matr[0][1],
+                                 conf_matr[1][0], conf_matr[1][1], set(x_all).difference(x)])
+        # Run random forest with parameters from grid search to obtain feature importances
+        random_forest_feature_importance = pd.DataFrame(data=[list(x),
+                    RandomForestClassifier(criterion=grid_search.best_params_['criterion'],
+                     max_features=grid_search.best_params_['max_features'],
+                     n_estimators=grid_search.best_params_['n_estimators'], random_state=1).fit(x,y).feature_importances_.tolist()]).T.rename(columns={0:'variable',
+                     1:'importance'}).sort_values(by='importance', ascending=False)
+        print(random_forest_feature_importance)
+        if len(random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01]) > 0:
+            for i in range(1, len(random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01])+1):
+                print(f"'Worst' variable being examined: {random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01].variable.values[-i]}")
+                bottom_variable = random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01].variable.values[-i]
+                bottom_variable = bottom_variable.split('_')[0]
+                bottom_variable = [col for col in list(x) if bottom_variable in col]
+                compare_counter = 0
+                for var in bottom_variable:
+                    if var in random_forest_feature_importance.loc[random_forest_feature_importance.importance<0.01].variable.values:
+                        compare_counter += 1
+                if len(bottom_variable) == compare_counter:
+                    print(f"Following variable(s) will be dropped from x {bottom_variable}")
+                    x = x.drop(columns=bottom_variable)
+                    break
+                else:
+                    print("Next 'worst' variable will be examined for dropping.")
+                    continue
             else:
-                print("Next 'worst' variable will be examined for dropping.")
-                continue
-        else:
-            break
-# Create DataFrame of random forest classifer results
-model_search_rfc = pd.DataFrame(model_search_rfc, columns=['best_model_params_grid_search', 'best_score_grid_search',
-                                             'true_negatives', 'false_positives',
-                                             'false_negatives', 'true_positives', 'variables_not_used'])
-# Create recall and precision columns
-model_search_rfc['recall'] = model_search_rfc.true_positives/(model_search_rfc.true_positives + model_search_rfc.false_negatives)
-model_search_rfc['precision'] = model_search_rfc.true_positives/(model_search_rfc.true_positives + model_search_rfc.false_positives)
-model_search_rfc['f1_score'] = 2 * (model_search_rfc.precision * model_search_rfc.recall) / (model_search_rfc.precision + model_search_rfc.recall)
-# Sort DataFrame
-model_search_rfc = model_search_rfc.sort_values(by=['f1_score'], ascending=False)
+                break
+    # Create DataFrame of random forest classifer results
+    model_search_rfc = pd.DataFrame(model_search_rfc, columns=['best_model_params_grid_search', 'best_score_grid_search',
+                                                 'true_negatives', 'false_positives',
+                                                 'false_negatives', 'true_positives', 'variables_not_used'])
+        # Create recall and precision columns
+    model_search_rfc['recall'] = model_search_rfc.true_positives/(model_search_rfc.true_positives + model_search_rfc.false_negatives)
+    model_search_rfc['precision'] = model_search_rfc.true_positives/(model_search_rfc.true_positives + model_search_rfc.false_positives)
+    model_search_rfc['f1_score'] = 2 * (model_search_rfc.precision * model_search_rfc.recall) / (model_search_rfc.precision + model_search_rfc.recall)
+    # Sort DataFrame
+    model_search_rfc = model_search_rfc.sort_values(by=['f1_score'], ascending=False)
+    print(model_search_rfc)
 
+    if len(model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()]) > 1:
+        print("Fix multiple best model problem for rfc")
+        break
+    else:
+        top_model_result_rfc = model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()]
+    top_model_results = top_model_results.append(other=top_model_result_rfc, sort=False)
+    print(top_model_result_rfc)
 
-if len(model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()]) > 1:
-    print("Fix multiple best model problem for rfc")
-else:
-    top_model_result_rfc = model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()]
-
-
-
-
-
-
-
-
-
-
-
+    # Append top_model_result_rfc results to all_model_results DataFrame
+    # Re-create feature variables
+    x = model.drop(columns='num')
+    rfc_predict_proba = cross_val_predict(RandomForestClassifier(criterion=top_model_result_rfc["best_model_params_grid_search"].values[0]['criterion'],
+                     max_features=top_model_result_rfc["best_model_params_grid_search"].values[0]['max_features'],
+                     n_estimators=top_model_result_rfc["best_model_params_grid_search"].values[0]['n_estimators']),
+                     x[[x for x in list(x) if x not in list(top_model_result_rfc['variables_not_used'].values[0])]], y, cv=5, method='predict_proba')
+    all_model_results['rfc_'+inflect.engine().number_to_words(index)+'_pred_zero'] = rfc_predict_proba[:,0]
+    all_model_results['rfc_'+inflect.engine().number_to_words(index)+'_pred_one'] = rfc_predict_proba[:,1]
 
 
 ### Support-vector machine classifer
 # Standard scale continuous variables
 scaler = StandardScaler()
+# Unique variable combination runs
+for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
+                                                              categorical_variables_for_modeling_list), start=1):
+    print(index)
+    # Create copy of hungarian for non-regression modeling
+    model = hungarian.copy()
+    # Drop columns
+    model = model.drop(columns=vars_to_drop)
+    # Dummy variable categorical variables
+    model = pd.get_dummies(data=model, columns=cat_vars_to_model, drop_first=False)
+    # Create target variable
+    y = model['num']
+    # Create feature variables
+    x = model.drop(columns='num')
 
-# Create copy of x for standard scaling
-x_std = x.copy()
+    # Create copy of x for standard scaling
+    x_std = x.copy()
+    print(list(x_std)[list(x_std).index('sex_0')-1])
+    x_std.loc[:, :list(x_std)[list(x_std).index('sex_0')-1]] = scaler.fit_transform(x_std.loc[:, :list(x_std)[list(x_std).index('sex_0')-1]])
 
-x_std.loc[:, 'age':'days_between_c_ekg'] = scaler.fit_transform(x_std.loc[:, 'age':'days_between_c_ekg'])
+    # Define parameters of SVC
+    svc_model = SVC(kernel='linear')
+    # Recursive feature elimination
+    rfe_svc = pd.DataFrame(data=[list(x_std), RFE(svc_model, n_features_to_select=1).fit(x_std, y).ranking_.tolist()]).T.\
+        rename(columns={0: 'variable', 1: 'rfe_ranking'}).sort_values(by='rfe_ranking').reset_index(drop=True)
+    svc_model = SVC(random_state=1)
+    param_grid = {'kernel': ['rbf', 'sigmoid', 'linear'], 'C': np.arange(0.10, 2.41, step=0.05), 'gamma': ['scale', 'auto']}
+    cv = ShuffleSplit(n_splits=5, test_size=0.3)
+    # Define grid search CV parameters
+    grid_search = GridSearchCV(svc_model, param_grid, cv=cv) # , scoring='recall'
 
-# Define parameters of SVC
-svc_model = SVC(kernel='linear')
-# Recursive feature elimination
-rfe_svc = pd.DataFrame(data=[list(x_std), RFE(svc_model, n_features_to_select=1).fit(x_std, y).ranking_.tolist()]).T.\
-    rename(columns={0: 'variable', 1: 'rfe_ranking'}).sort_values(by='rfe_ranking').reset_index(drop=True)
+    # Loop through features based on recursive feature elimination evaluation - top to bottom
+    model_search_svc = []
+    svc_variable_list = []
+    for i in range(len(rfe_svc)):
+        if rfe_svc['variable'][i] not in svc_variable_list:
+            svc_variable_list.extend([rfe_svc['variable'][i]])
+            # Add related one-hot encoded variables if variable is categorical
+            if svc_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x_std)])) if len(x) == 1]):
+                svc_variable_list.extend([var for var in list(x_std) if svc_variable_list[-1].split('_')[0] in var and var != svc_variable_list[-1]])
+            ###################################################################
+            print(svc_variable_list)
+            grid_search.fit(x_std[svc_variable_list], y)
+            print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+            print(f'Best score for current grid seach: {grid_search.best_score_}')
+            # Define parameters of Support-vector machine classifer from grid search
+            svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
+                            gamma=grid_search.best_params_['gamma'], random_state=1)
+            # Cross-validate and predict using Support-vector machine classifer
+            svc_predict = cross_val_predict(svc_model, x_std[svc_variable_list], y, cv=5)
+            print(confusion_matrix(y_true=y, y_pred=svc_predict))
+            conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
+            model_search_svc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
+                                     conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], list(x_std[svc_variable_list])])
+    # Create DataFrame of svc results
+    model_search_svc = pd.DataFrame(model_search_svc, columns=['best_model_params_grid_search', 'best_score_grid_search',
+                                                 'true_negatives', 'false_positives',
+                                                 'false_negatives', 'true_positives', 'variables_used'])
+    # Create recall, precision, f1-score columns
+    model_search_svc['recall'] = model_search_svc.true_positives/(model_search_svc.true_positives + model_search_svc.false_negatives)
+    model_search_svc['precision'] = model_search_svc.true_positives/(model_search_svc.true_positives + model_search_svc.false_positives)
+    model_search_svc['f1_score'] = 2 * (model_search_svc.precision * model_search_svc.recall) / (model_search_svc.precision + model_search_svc.recall)
+    # Sort DataFrame
+    model_search_svc = model_search_svc.sort_values(by=['f1_score'], ascending=False)
+    print(model_search_svc)
 
-svc_model = SVC(random_state=1)
-param_grid = {'kernel': ['rbf', 'sigmoid', 'linear'], 'C': np.arange(0.10, 2.41, step=0.1), 'gamma': ['scale', 'auto']}
-cv = ShuffleSplit(n_splits=5, test_size=0.3)
-# Define grid search CV parameters
-grid_search = GridSearchCV(svc_model, param_grid, cv=cv) # , scoring='recall'
+    # Choose top model from svc model search
+    if len(model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()]) > 1:
+        top_model_result_svc = model_search_svc.loc[(model_search_svc.f1_score == model_search_svc.f1_score.max()) &
+            (model_search_svc['variables_used'].apply(len) == min(map(lambda x: len(x[list(model_search_svc).index('variables_used')]),
+             model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()].values)))]
+        if len(top_model_result_svc) > 1: ########################
+            top_model_result_svc = top_model_result_svc.loc[top_model_result_svc.best_score_grid_search == top_model_result_svc.best_score_grid_search.max()]
+    else:
+        top_model_result_svc = model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()]
+    top_model_results = top_model_results.append(other=top_model_result_svc, sort=False)
+    print(top_model_result_svc)
 
-# Loop through features based on recursive feature elimination evaluation - top to bottom
-model_search_svc = []
-svc_variable_list = []
-for i in range(len(rfe_svc)):
-    if rfe_svc['variable'][i] not in svc_variable_list:
-        svc_variable_list.extend([rfe_svc['variable'][i]])
-        # Add related one-hot encoded variables if variable is categorical
-        if svc_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x_std)])) if len(x) == 1]):
-            svc_variable_list.extend([var for var in list(x_std) if svc_variable_list[-1].split('_')[0] in var and var != svc_variable_list[-1]])
-        ###################################################################
-        print(svc_variable_list)
-        grid_search.fit(x_std[svc_variable_list], y)
-        print(f'Best parameters for current grid seach: {grid_search.best_params_}')
-        print(f'Best score for current grid seach: {grid_search.best_score_}')
-        # Define parameters of Support-vector machine classifer from grid search
-        svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
-                        gamma=grid_search.best_params_['gamma'], random_state=1)
-        # Cross-validate and predict using Support-vector machine classifer
-        svc_predict = cross_val_predict(svc_model, x_std[svc_variable_list], y, cv=5)
-        print(confusion_matrix(y_true=y, y_pred=svc_predict))
-        conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
-        model_search_svc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
-                                 conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], list(x_std[svc_variable_list])])
-        # else:
-        #     print(svc_variable_list)
-        #     grid_search.fit(x_std[svc_variable_list], y)
-        #     print(f'Best parameters for current grid seach: {grid_search.best_params_}')
-        #     print(f'Best score for current grid seach: {grid_search.best_score_}')
-        #     # Define parameters of Support-vector machine classifer from grid search
-        #     svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
-        #                     gamma=grid_search.best_params_['gamma'], random_state=1)
-        #     # Cross-validate and predict using Support-vector machine classifer
-        #     svc_predict = cross_val_predict(svc_model, x_std[svc_variable_list], y, cv=5)
-        #     print(confusion_matrix(y_true=y, y_pred=svc_predict))
-        #     conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
-        #     model_search_svc.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
-        #                              conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], list(x_std[svc_variable_list])])
-# Create DataFrame of k-nearest neighbors results
-model_search_svc = pd.DataFrame(model_search_svc, columns=['best_model_params_grid_search', 'best_score_grid_search',
-                                             'true_negatives', 'false_positives',
-                                             'false_negatives', 'true_positives', 'variables_used'])
-# Create recall, precision, f1-score columns
-model_search_svc['recall'] = model_search_svc.true_positives/(model_search_svc.true_positives + model_search_svc.false_negatives)
-model_search_svc['precision'] = model_search_svc.true_positives/(model_search_svc.true_positives + model_search_svc.false_positives)
-model_search_svc['f1_score'] = 2 * (model_search_svc.precision * model_search_svc.recall) / (model_search_svc.precision + model_search_svc.recall)
-# Sort DataFrame
-model_search_svc = model_search_svc.sort_values(by=['f1_score'], ascending=False)
-print(model_search_svc)
+    # Append top_model_result_svc results to all_model_results DataFrame
+    all_model_results['svc_'+inflect.engine().number_to_words(index)] = cross_val_predict(SVC(
+        kernel=top_model_result_svc['best_model_params_grid_search'].values[0]['kernel'],
+        C=top_model_result_svc['best_model_params_grid_search'].values[0]['C'],
+        gamma=top_model_result_svc['best_model_params_grid_search'].values[0]['gamma']),
+        x_std[top_model_result_svc['variables_used'].values[0]], y, cv=5)
 
-# Choose top model from svc model search
-if len(model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()]) > 1:
-    top_model_result_svc = model_search_svc.loc[(model_search_svc.f1_score == model_search_svc.f1_score.max()) &
-        (model_search_svc['variables_used'].apply(len) == min(map(lambda x: len(x[list(model_search_svc).index('variables_used')]),
-         model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()].values)))]
-    if len(top_model_result_svc) > 1:
-        top_model_result_svc = top_model_result_svc.loc[top_model_result_svc.best_score_grid_search == top_model_result_svc.best_score_grid_search.max()]
-
-
-
-
-
-
-
-
-svc_model = SVC(kernel='rbf', C=1.1, gamma='scale')
-svc_predict = cross_val_predict(svc_model, x_std, y, cv=5)
-print(confusion_matrix(y_true=y, y_pred=svc_predict))
 
 ### K-Nearest Neighbors
+# Standard scale continuous variables
+scaler = StandardScaler()
+# Unique variable combination runs
+for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
+                                                              categorical_variables_for_modeling_list), start=1):
+    print(index)
+    # Create copy of hungarian for non-regression modeling
+    model = hungarian.copy()
+    # Drop columns
+    model = model.drop(columns=vars_to_drop)
+    # Dummy variable categorical variables
+    model = pd.get_dummies(data=model, columns=cat_vars_to_model, drop_first=False)
+    # Create target variable
+    y = model['num']
+    # Create feature variables
+    x = model.drop(columns='num')
 
-# Use Recursive Feature Elimination from SVC
-# Define parameters of SVC
-svc_model = SVC(kernel='linear', random_state=1)
-# Feature importance DataFrame
-feature_info = pd.DataFrame(data=[list(x_std), RFE(svc_model, n_features_to_select=1).fit(x_std, y).ranking_.tolist()]).T.\
-    rename(columns={0: 'variable', 1: 'rfe_svc'}).reset_index(drop=True)
+    # Create copy of x for standard scaling
+    x_std = x.copy()
+    x_std.loc[:, :list(x_std)[list(x_std).index('sex_0')-1]] = scaler.fit_transform(x_std.loc[:, :list(x_std)[list(x_std).index('sex_0')-1]])
 
-# Define parameters of Random Forest Classifier
-random_forest_model = RandomForestClassifier(random_state=1)
-# Merge feature importances from random forest classifer on feature_info
-feature_info = feature_info.merge(pd.DataFrame(data=[list(x), random_forest_model.fit(x,y).feature_importances_.tolist()]).T.\
-    rename(columns={0: 'variable', 1: 'feature_importance_rfc'}), on='variable')
-# Sort values by descending random forest classifier feature importance to create ranking column
-feature_info = feature_info.sort_values(by='feature_importance_rfc', ascending=False)
-feature_info['feature_importance_rfc_ranking'] = np.arange(1,len(feature_info)+1)
+    # Use Recursive Feature Elimination from SVC
+    # Define parameters of SVC
+    svc_model = SVC(kernel='linear', random_state=1)
+    # Feature importance DataFrame
+    feature_info = pd.DataFrame(data=[list(x_std), RFE(svc_model, n_features_to_select=1).fit(x_std, y).ranking_.tolist()]).T.\
+        rename(columns={0: 'variable', 1: 'rfe_svc'}).reset_index(drop=True)
 
-# Define parameters of Gradient Boosting Classifier
-gbm_model = GradientBoostingClassifier(random_state=1)
-# Merge feature importances from gradient boosting classifer on feature_info
-feature_info = feature_info.merge(pd.DataFrame(data=[list(x), gbm_model.fit(x,y).feature_importances_.tolist()]).T.\
-    rename(columns={0: 'variable', 1: 'feature_importance_gbm'}), on='variable')
-# Sort values by descending gradient boosting classifier feature importance to create ranking column
-feature_info = feature_info.sort_values(by='feature_importance_gbm', ascending=False)
-feature_info['feature_importance_gbm_ranking'] = np.arange(1,len(feature_info)+1)
+    # Define parameters of Random Forest Classifier
+    random_forest_model = RandomForestClassifier(random_state=1)
+    # Merge feature importances from random forest classifer on feature_info
+    feature_info = feature_info.merge(pd.DataFrame(data=[list(x), random_forest_model.fit(x,y).feature_importances_.tolist()]).T.\
+        rename(columns={0: 'variable', 1: 'feature_importance_rfc'}), on='variable')
+    # Sort values by descending random forest classifier feature importance to create ranking column
+    feature_info = feature_info.sort_values(by='feature_importance_rfc', ascending=False)
+    feature_info['feature_importance_rfc_ranking'] = np.arange(1,len(feature_info)+1)
 
-# Get average of three RFE/feature importance columns
-feature_info['feature_importance_avg'] = feature_info[['rfe_svc', 'feature_importance_rfc_ranking', 'feature_importance_gbm_ranking']].mean(axis=1)
-# Sort values by average column
-feature_info = feature_info.sort_values(by='feature_importance_avg', ascending=True).reset_index(drop=True)
+    # Define parameters of Gradient Boosting Classifier
+    gbm_model = GradientBoostingClassifier(random_state=1)
+    # Merge feature importances from gradient boosting classifer on feature_info
+    feature_info = feature_info.merge(pd.DataFrame(data=[list(x), gbm_model.fit(x,y).feature_importances_.tolist()]).T.\
+        rename(columns={0: 'variable', 1: 'feature_importance_gbm'}), on='variable')
+    # Sort values by descending gradient boosting classifier feature importance to create ranking column
+    feature_info = feature_info.sort_values(by='feature_importance_gbm', ascending=False)
+    feature_info['feature_importance_gbm_ranking'] = np.arange(1,len(feature_info)+1)
 
-# Define parameters of kNN model
-knn_model = KNeighborsClassifier(metric='minkowski')
-# Define parameters of grid search
-param_grid = {'n_neighbors': np.arange(9, 47, step=2), 'weights': ['uniform', 'distance']}
-# Define parameters of shuffle split
-cv = ShuffleSplit(n_splits=5, test_size=0.3)
+    # Get average of three RFE/feature importance columns
+    feature_info['feature_importance_avg'] = feature_info[['rfe_svc', 'feature_importance_rfc_ranking', 'feature_importance_gbm_ranking']].mean(axis=1)
+    # Sort values by average column
+    feature_info = feature_info.sort_values(by='feature_importance_avg', ascending=True).reset_index(drop=True)
 
-# Define grid search CV parameters
-grid_search = GridSearchCV(knn_model, param_grid, cv=cv) # , scoring='recall'
+    # Define parameters of kNN model
+    knn_model = KNeighborsClassifier(metric='minkowski')
+    # Define parameters of grid search
+    param_grid = {'n_neighbors': np.arange(9, 47, step=2), 'weights': ['uniform', 'distance']}
+    # Define parameters of shuffle split
+    cv = ShuffleSplit(n_splits=5, test_size=0.3)
+    # Define grid search CV parameters
+    grid_search = GridSearchCV(knn_model, param_grid, cv=cv) # , scoring='recall'
+    # Append model results to this list
+    model_search_knn = []
+    # Begin top to bottom process - looking at most important variables (by RFE ranking first and adding on)
+    knn_variable_list = []
+    for i in range(len(feature_info)):
+        if feature_info['variable'][i] not in knn_variable_list:
+            knn_variable_list.extend([feature_info['variable'][i]])
+            # Add related one-hot encoded variables if variable is categorical
+            if knn_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x_std)])) if len(x) == 1]):
+                knn_variable_list.extend([var for var in list(x_std) if knn_variable_list[-1].split('_')[0] in var and var != knn_variable_list[-1]])
+            print(knn_variable_list)
+            grid_search.fit(x_std[knn_variable_list], y)
+            print(f'Best parameters for current grid seach: {grid_search.best_params_}')
+            print(f'Best score for current grid seach: {grid_search.best_score_}')
+            # Define parameters of k-nearest neighbors from grid search
+            knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=grid_search.best_params_['n_neighbors'],
+                            weights=grid_search.best_params_['weights'])
+            # Cross-validate and predict using Support-vector machine classifer
+            knn_predict = cross_val_predict(knn_model, x_std[knn_variable_list], y, cv=5)
+            print(confusion_matrix(y_true=y, y_pred=knn_predict))
+            conf_matr = confusion_matrix(y_true=y, y_pred=knn_predict)
+            model_search_knn.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
+                                     conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], list(x_std[knn_variable_list])])
+    # Create DataFrame of k-nearest neighbors results
+    model_search_knn = pd.DataFrame(model_search_knn, columns=['best_model_params_grid_search', 'best_score_grid_search',
+                                                 'true_negatives', 'false_positives',
+                                                 'false_negatives', 'true_positives', 'variables_used'])
+    # Create recall, precision, f1-score columns
+    model_search_knn['recall'] = model_search_knn.true_positives/(model_search_knn.true_positives + model_search_knn.false_negatives)
+    model_search_knn['precision'] = model_search_knn.true_positives/(model_search_knn.true_positives + model_search_knn.false_positives)
+    model_search_knn['f1_score'] = 2 * (model_search_knn.precision * model_search_knn.recall) / (model_search_knn.precision + model_search_knn.recall)
+    # Sort DataFrame
+    model_search_knn = model_search_knn.sort_values(by=['f1_score'], ascending=False)
+    print(model_search_knn)
 
-# Append model results to this list
-model_search_knn = []
-# Begin top to bottom process - looking at most important variables (by RFE ranking first and adding on)
-knn_variable_list = []
-for i in range(len(feature_info)):
-    if feature_info['variable'][i] not in knn_variable_list:
-        knn_variable_list.extend([feature_info['variable'][i]])
-        # Add related one-hot encoded variables if variable is categorical
-        if knn_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x_std)])) if len(x) == 1]):
-            knn_variable_list.extend([var for var in list(x_std) if knn_variable_list[-1].split('_')[0] in var and var != knn_variable_list[-1]])
-        print(knn_variable_list)
-        grid_search.fit(x_std[knn_variable_list], y)
-        print(f'Best parameters for current grid seach: {grid_search.best_params_}')
-        print(f'Best score for current grid seach: {grid_search.best_score_}')
-        # Define parameters of k-nearest neighbors from grid search
-        knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=grid_search.best_params_['n_neighbors'],
-                        weights=grid_search.best_params_['weights'])
-        # Cross-validate and predict using Support-vector machine classifer
-        knn_predict = cross_val_predict(knn_model, x_std[knn_variable_list], y, cv=5)
-        print(confusion_matrix(y_true=y, y_pred=knn_predict))
-        conf_matr = confusion_matrix(y_true=y, y_pred=knn_predict)
-        model_search_knn.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
-                                 conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], list(x_std[knn_variable_list])])
-        # else:
-        #     print(knn_variable_list)
-        #     grid_search.fit(x_std[knn_variable_list], y)
-        #     print(f'Best parameters for current grid seach: {grid_search.best_params_}')
-        #     print(f'Best score for current grid seach: {grid_search.best_score_}')
-        #     # Define parameters of k-nearest neighbors from grid search
-        #     knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=grid_search.best_params_['n_neighbors'],
-        #                     weights=grid_search.best_params_['weights'])
-        #     # Cross-validate and predict using Support-vector machine classifer
-        #     knn_predict = cross_val_predict(knn_model, x_std[knn_variable_list], y, cv=5)
-        #     print(confusion_matrix(y_true=y, y_pred=knn_predict))
-        #     conf_matr = confusion_matrix(y_true=y, y_pred=knn_predict)
-        #     model_search_knn.append([grid_search.best_params_, grid_search.best_score_, conf_matr[0][0],
-        #                              conf_matr[0][1], conf_matr[1][0], conf_matr[1][1], list(x_std[knn_variable_list])])
-# Create DataFrame of k-nearest neighbors results
-model_search_knn = pd.DataFrame(model_search_knn, columns=['best_model_params_grid_search', 'best_score_grid_search',
-                                             'true_negatives', 'false_positives',
-                                             'false_negatives', 'true_positives', 'variables_used'])
-# Create recall, precision, f1-score columns
-model_search_knn['recall'] = model_search_knn.true_positives/(model_search_knn.true_positives + model_search_knn.false_negatives)
-model_search_knn['precision'] = model_search_knn.true_positives/(model_search_knn.true_positives + model_search_knn.false_positives)
-model_search_knn['f1_score'] = 2 * (model_search_knn.precision * model_search_knn.recall) / (model_search_knn.precision + model_search_knn.recall)
-# Sort DataFrame
-model_search_knn = model_search_knn.sort_values(by=['f1_score'], ascending=False)
-print(model_search_knn)
+    if len(model_search_knn.loc[model_search_knn.f1_score==model_search_knn.f1_score.max()]) > 1:
+        print("Fix multiple best model problem for rfc")
+        break
+    else:
+        top_model_result_knn = model_search_knn.loc[model_search_knn.f1_score==model_search_knn.f1_score.max()]
+    top_model_results = top_model_results.append(other=top_model_result_knn, sort=False)
+    print(top_model_result_knn)
 
-if len(model_search_knn.loc[model_search_knn.f1_score==model_search_knn.f1_score.max()]) > 1:
-    print("Fix multiple best model problem for rfc")
-else:
-    top_model_result_knn = model_search_knn.loc[model_search_knn.f1_score==model_search_knn.f1_score.max()]
-
+    # Append top_model_result_knn results to all_model_results DataFrame
+    knn_predict_proba = cross_val_predict(KNeighborsClassifier(metric='minkowski',
+                               n_neighbors=top_model_result_knn['best_model_params_grid_search'].values[0]['n_neighbors'],
+                               weights=top_model_result_knn['best_model_params_grid_search'].values[0]['weights']),
+                     x_std[top_model_result_knn['variables_used'].values[0]], y, cv=5, method='predict_proba')
+    all_model_results['knn_'+inflect.engine().number_to_words(index)+'_pred_zero'] = knn_predict_proba[:,0]
+    all_model_results['knn_'+inflect.engine().number_to_words(index)+'_pred_one'] = knn_predict_proba[:,1]
 
 
-
-
-
-
-
-
-
-grid_search.fit(x_std[['exang_0', 'exang_1']], y)
-print(grid_search.best_params_, grid_search.best_score_)
-
-knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=33, weights='uniform')
-knn_predict = cross_val_predict(knn_model, x_std, y, cv=5)
-print(confusion_matrix(y_true=y, y_pred=knn_predict))
 
 ### Gradient-boosting model
-# Create copy of hungarian for non-regression modeling
-model = hungarian.copy()
-# Drop columns
-model = model.drop(columns=['id', 'chol', 'thalrest', 'trestbps', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday',
-                            'ekg_date', 'cardiac_cath_date', 'rldv5', 'lvx3', 'lvx4', 'lvf', 'pro', 'proto',
-                            'rldv5_rldv5e_pca'])
-# Dummy variable categorical variables
-model = pd.get_dummies(data=model, columns=categorical_variables[:-7] + [categorical_variables[-6]] + [categorical_variables[-4]], drop_first=False)
-# Create target variable
-y = model['num']
-# Create feature variables
-x = model.drop(columns='num')
+# Unique variable combination runs
+for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
+                                                              categorical_variables_for_modeling_list), start=1):
+    print(index)
+    # Create copy of hungarian for non-regression modeling
+    model = hungarian.copy()
+    # Drop columns
+    model = model.drop(columns=vars_to_drop)
+    # Dummy variable categorical variables
+    model = pd.get_dummies(data=model, columns=cat_vars_to_model, drop_first=False)
+    # Create target variable
+    y = model['num']
+    # Create feature variables
+    x = model.drop(columns='num')
 
-# Obtain list of all feature variables
-x_all = list(x)
-model_search_gbm = []
+    # Obtain list of all feature variables
+    x_all = list(x)
+    model_search_gbm = []
 
-while True:
-    print(x.shape)
-    print('------')
-    print("\n")
-    # Baseline model
-    gbm_baseline = GradientBoostingClassifier()
-    # Cross-validate
-    cross_val_score_gbm = cross_val_score(gbm_baseline, x, y, cv=cv)
-    # Baseline cv score mean
-    # print(f"Baseline gbm cross_val_score mean: {cross_val_score_gbm.mean()}")
+    while True:
+        print(x.shape)
+        print('------')
+        print("\n")
+        # Baseline model
+        gbm_baseline = GradientBoostingClassifier()
+        # Cross-validate
+        cross_val_score_gbm = cross_val_score(gbm_baseline, x, y, cv=cv)
+        # Baseline cv score mean
+        # print(f"Baseline gbm cross_val_score mean: {cross_val_score_gbm.mean()}")
 
-    # Begin parameter tuning for GBM
-    # Set initial values (will be tuned later)
-    min_samples_split = 3
-    min_samples_leaf = 20
-    max_depth = 5
-    max_features = 'sqrt'
-    subsample = 0.8
-    learning_rate = 0.1
-    # Set param_grid to tune n_estimators
-    param_grid = {'n_estimators': np.arange(20,81,10)}
+        # Begin parameter tuning for GBM
+        # Set initial values (will be tuned later)
+        min_samples_split = 3
+        min_samples_leaf = 20
+        max_depth = 5
+        max_features = 'sqrt'
+        subsample = 0.8
+        learning_rate = 0.1
+        # Set param_grid to tune n_estimators
+        param_grid = {'n_estimators': np.arange(20,81,10)}
 
-    # Tune n_estimators
-    gbm_one = GradientBoostingClassifier(learning_rate= learning_rate, min_samples_split= min_samples_split,
-                                         min_samples_leaf= min_samples_leaf, max_depth= max_depth,
-                                         max_features= max_features, subsample= subsample)
-    grid_search = GridSearchCV(gbm_one, param_grid, cv=cv) # , scoring='recall'
-    grid_search.fit(x, y)
-    # print(grid_search.best_params_, grid_search.best_score_)
-    # Obain n_estimators from grid search
-    n_estimators_best_param_grid_search_one = grid_search.best_params_['n_estimators']
+        # Tune n_estimators
+        gbm_one = GradientBoostingClassifier(learning_rate= learning_rate, min_samples_split= min_samples_split,
+                                             min_samples_leaf= min_samples_leaf, max_depth= max_depth,
+                                             max_features= max_features, subsample= subsample)
+        grid_search = GridSearchCV(gbm_one, param_grid, cv=cv) # , scoring='recall'
+        grid_search.fit(x, y)
+        # print(grid_search.best_params_, grid_search.best_score_)
+        # Obain n_estimators from grid search
+        n_estimators_best_param_grid_search_one = grid_search.best_params_['n_estimators']
 
-    # Tune tree-specific parameters
-    param_grid2 = {'max_depth': np.arange(3,20,2), 'min_samples_split': np.arange(10,200,10)}
-    # Tune max_depth and min_samples_split
-    gbm_two = GradientBoostingClassifier(learning_rate= learning_rate, max_features= max_features,
-                                         subsample= subsample, n_estimators=n_estimators_best_param_grid_search_one)
-    grid_search = GridSearchCV(gbm_two, param_grid2, cv=cv) # , scoring='recall'
-    grid_search.fit(x, y)
-    # print(grid_search.best_params_, grid_search.best_score_)
-    # Obain max_depth and min_samples_split from grid search
-    max_depth_best_param_grid_search_two = grid_search.best_params_['max_depth']
-    min_samples_split_best_param_grid_search_two = grid_search.best_params_['min_samples_split']
+        # Tune tree-specific parameters
+        param_grid2 = {'max_depth': np.arange(3,20,2), 'min_samples_split': np.arange(10,200,10)}
+        # Tune max_depth and min_samples_split
+        gbm_two = GradientBoostingClassifier(learning_rate= learning_rate, max_features= max_features,
+                                             subsample= subsample, n_estimators=n_estimators_best_param_grid_search_one)
+        grid_search = GridSearchCV(gbm_two, param_grid2, cv=cv) # , scoring='recall'
+        grid_search.fit(x, y)
+        # print(grid_search.best_params_, grid_search.best_score_)
+        # Obain max_depth and min_samples_split from grid search
+        max_depth_best_param_grid_search_two = grid_search.best_params_['max_depth']
+        min_samples_split_best_param_grid_search_two = grid_search.best_params_['min_samples_split']
 
-    # Tune min_samples_leaf
-    param_grid3 = {'min_samples_leaf': np.arange(1,15,1)}
-    gbm_three = GradientBoostingClassifier(learning_rate= learning_rate, max_features= max_features,
-                                         subsample= subsample, n_estimators=n_estimators_best_param_grid_search_one,
-                                           max_depth= max_depth_best_param_grid_search_two,
-                                           min_samples_split= min_samples_split_best_param_grid_search_two)
-    grid_search = GridSearchCV(gbm_three, param_grid3, cv=cv) # , scoring='recall'
-    grid_search.fit(x, y)
-    # print(grid_search.best_params_, grid_search.best_score_)
-    # Obain min_samples_leaf from grid search
-    min_samples_leaf_best_param_grid_search_three = grid_search.best_params_['min_samples_leaf']
+        # Tune min_samples_leaf
+        param_grid3 = {'min_samples_leaf': np.arange(1,15,1)}
+        gbm_three = GradientBoostingClassifier(learning_rate= learning_rate, max_features= max_features,
+                                             subsample= subsample, n_estimators=n_estimators_best_param_grid_search_one,
+                                               max_depth= max_depth_best_param_grid_search_two,
+                                               min_samples_split= min_samples_split_best_param_grid_search_two)
+        grid_search = GridSearchCV(gbm_three, param_grid3, cv=cv) # , scoring='recall'
+        grid_search.fit(x, y)
+        # print(grid_search.best_params_, grid_search.best_score_)
+        # Obain min_samples_leaf from grid search
+        min_samples_leaf_best_param_grid_search_three = grid_search.best_params_['min_samples_leaf']
 
-    # Tune max_features
-    param_grid4 = {'max_features': np.arange(2,20,1)}
-    gbm_four = GradientBoostingClassifier(learning_rate= learning_rate, subsample= subsample,
-                                          n_estimators=n_estimators_best_param_grid_search_one,
-                                          max_depth= max_depth_best_param_grid_search_two,
-                                          min_samples_split= min_samples_split_best_param_grid_search_two,
-                                          min_samples_leaf= min_samples_leaf_best_param_grid_search_three)
-    grid_search = GridSearchCV(gbm_four, param_grid4, cv=cv) # , scoring='recall'
-    grid_search.fit(x, y)
-    # print(grid_search.best_params_, grid_search.best_score_)
-    # Obain max_features from grid search
-    max_features_best_param_grid_search_four = grid_search.best_params_['max_features']
+        # Tune max_features
+        param_grid4 = {'max_features': np.arange(2,20,1)}
+        gbm_four = GradientBoostingClassifier(learning_rate= learning_rate, subsample= subsample,
+                                              n_estimators=n_estimators_best_param_grid_search_one,
+                                              max_depth= max_depth_best_param_grid_search_two,
+                                              min_samples_split= min_samples_split_best_param_grid_search_two,
+                                              min_samples_leaf= min_samples_leaf_best_param_grid_search_three)
+        grid_search = GridSearchCV(gbm_four, param_grid4, cv=cv) # , scoring='recall'
+        grid_search.fit(x, y)
+        # print(grid_search.best_params_, grid_search.best_score_)
+        # Obain max_features from grid search
+        max_features_best_param_grid_search_four = grid_search.best_params_['max_features']
 
-    # Tune subsample
-    param_grid5 = {'subsample': np.arange(0.6,1,0.05)}
-    gbm_five = GradientBoostingClassifier(learning_rate= learning_rate,
-                                          n_estimators=n_estimators_best_param_grid_search_one,
-                                          max_depth=max_depth_best_param_grid_search_two,
-                                          min_samples_split=min_samples_split_best_param_grid_search_two,
-                                          min_samples_leaf=min_samples_leaf_best_param_grid_search_three,
-                                          max_features=max_features_best_param_grid_search_four)
-    grid_search = GridSearchCV(gbm_five, param_grid5, cv=cv) # , scoring='recall'
-    grid_search.fit(x, y)
-    # print(grid_search.best_params_, grid_search.best_score_)
-    # Obtain subsample from grid search
-    subsample_best_param_grid_search_five = grid_search.best_params_['subsample']
+        # Tune subsample
+        param_grid5 = {'subsample': np.arange(0.6,1,0.05)}
+        gbm_five = GradientBoostingClassifier(learning_rate= learning_rate,
+                                              n_estimators=n_estimators_best_param_grid_search_one,
+                                              max_depth=max_depth_best_param_grid_search_two,
+                                              min_samples_split=min_samples_split_best_param_grid_search_two,
+                                              min_samples_leaf=min_samples_leaf_best_param_grid_search_three,
+                                              max_features=max_features_best_param_grid_search_four)
+        grid_search = GridSearchCV(gbm_five, param_grid5, cv=cv) # , scoring='recall'
+        grid_search.fit(x, y)
+        # print(grid_search.best_params_, grid_search.best_score_)
+        # Obtain subsample from grid search
+        subsample_best_param_grid_search_five = grid_search.best_params_['subsample']
 
-    # Tune learning rate and increase n_estimators proportionally
-    param_grid_list = [[learning_rate, n_estimators_best_param_grid_search_one],
-                       [learning_rate/2, n_estimators_best_param_grid_search_one*2],
-                       [learning_rate/5, n_estimators_best_param_grid_search_one*5],
-                       [learning_rate/10, n_estimators_best_param_grid_search_one*10],
-                       [learning_rate/20, n_estimators_best_param_grid_search_one*20],
-                       [learning_rate/30, n_estimators_best_param_grid_search_one*30],
-                       [learning_rate/40, n_estimators_best_param_grid_search_one*40],
-                       [learning_rate/50, n_estimators_best_param_grid_search_one*50]]
-    # Append l_rate, n_ests, and cross_val_score mean
-    cross_val_score_gbm_six_means = []
-    for l_rate, n_ests in param_grid_list:
-        # print(l_rate, n_ests)
-        gbm_six = GradientBoostingClassifier(learning_rate=l_rate, n_estimators=n_ests,
-                                             max_depth=max_depth_best_param_grid_search_two,
-                                             min_samples_split=min_samples_split_best_param_grid_search_two,
-                                             min_samples_leaf=min_samples_leaf_best_param_grid_search_three,
-                                             max_features=max_features_best_param_grid_search_four,
-                                             subsample=subsample_best_param_grid_search_five)
-        cross_val_score_gbm_six = cross_val_score(gbm_six, x, y, cv=cv)
-        # print(cross_val_score_gbm_six)
-        # print(cross_val_score_gbm_six.mean())
-        cross_val_score_gbm_six_means.append([l_rate, n_ests, cross_val_score_gbm_six.mean()])
-        # Retrieve best values for learning_rate and n_estimators based on max value of cross_val_score_gbm_six.mean()
-        learning_rate_n_estimators_best_param_grid_list = list(filter(lambda x: x[2] == max(map(lambda x: x[2],
-                                                            cross_val_score_gbm_six_means)), cross_val_score_gbm_six_means))[0]
+        # Tune learning rate and increase n_estimators proportionally
+        param_grid_list = [[learning_rate, n_estimators_best_param_grid_search_one],
+                           [learning_rate/2, n_estimators_best_param_grid_search_one*2],
+                           [learning_rate/5, n_estimators_best_param_grid_search_one*5],
+                           [learning_rate/10, n_estimators_best_param_grid_search_one*10],
+                           [learning_rate/20, n_estimators_best_param_grid_search_one*20],
+                           [learning_rate/30, n_estimators_best_param_grid_search_one*30],
+                           [learning_rate/40, n_estimators_best_param_grid_search_one*40],
+                           [learning_rate/50, n_estimators_best_param_grid_search_one*50]]
+        # Append l_rate, n_ests, and cross_val_score mean
+        cross_val_score_gbm_six_means = []
+        for l_rate, n_ests in param_grid_list:
+            # print(l_rate, n_ests)
+            gbm_six = GradientBoostingClassifier(learning_rate=l_rate, n_estimators=n_ests,
+                                                 max_depth=max_depth_best_param_grid_search_two,
+                                                 min_samples_split=min_samples_split_best_param_grid_search_two,
+                                                 min_samples_leaf=min_samples_leaf_best_param_grid_search_three,
+                                                 max_features=max_features_best_param_grid_search_four,
+                                                 subsample=subsample_best_param_grid_search_five)
+            cross_val_score_gbm_six = cross_val_score(gbm_six, x, y, cv=cv)
+            # print(cross_val_score_gbm_six)
+            # print(cross_val_score_gbm_six.mean())
+            cross_val_score_gbm_six_means.append([l_rate, n_ests, cross_val_score_gbm_six.mean()])
+            # Retrieve best values for learning_rate and n_estimators based on max value of cross_val_score_gbm_six.mean()
+            learning_rate_n_estimators_best_param_grid_list = list(filter(lambda x: x[2] == max(map(lambda x: x[2],
+                                                                cross_val_score_gbm_six_means)), cross_val_score_gbm_six_means))[0]
 
-    gbm_final = GradientBoostingClassifier(learning_rate=learning_rate_n_estimators_best_param_grid_list[0],
-                                           n_estimators=learning_rate_n_estimators_best_param_grid_list[1],
-                                           max_depth=max_depth_best_param_grid_search_two,
-                                           min_samples_split=min_samples_split_best_param_grid_search_two,
-                                           min_samples_leaf=min_samples_leaf_best_param_grid_search_three,
-                                           max_features=max_features_best_param_grid_search_four,
-                                           subsample=subsample_best_param_grid_search_five)
-    gbm_predict = cross_val_predict(gbm_final, x, y, cv=5)
-    conf_matr = confusion_matrix(y_true=y, y_pred=gbm_predict)
-    # print(conf_matr)
-    model_search_gbm.append([gbm_final.get_params(), conf_matr[0][0], conf_matr[0][1],
-                             conf_matr[1][0], conf_matr[1][1], set(x_all).difference(x)])
-    # Obtain feature importances
-    gradient_boosting_feature_importance = pd.DataFrame(data=[list(x),
-        gbm_final.fit(x, y).feature_importances_.tolist()]).T.rename(columns={0:'variable',
-        1:'importance'}).sort_values(by='importance', ascending=False)
-    # Remove 'worst' variables one-by-one
-    print(gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.10])
-    if len(gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01]) > 0:
-        for i in range(1, len(gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01]) + 1):
-            print(f"'Worst' variable being examined: "
-                  f"{gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01].variable.values[-i]}")
-            bottom_variable = gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01].variable.values[-i]
-            # If True, means it is a categorical variable - want to check for other one-hot encoded variables
-            # if any(x in bottom_variable for x in sorted([x for x in list(set([x.split('_')[-1] for x in list(x)])) if len(x) == 1])):
-            bottom_variable = bottom_variable.split('_')[0]
-            bottom_variable = [col for col in list(x) if bottom_variable in col]
-            compare_counter = 0
-            for var in bottom_variable:
-                if var in gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance<0.01].variable.values:
-                    compare_counter += 1
-            if len(bottom_variable) == compare_counter:
-                print(f"Following variable(s) will be dropped from x {bottom_variable}")
-                x = x.drop(columns=bottom_variable)
-                break
+        gbm_final = GradientBoostingClassifier(learning_rate=learning_rate_n_estimators_best_param_grid_list[0],
+                                               n_estimators=learning_rate_n_estimators_best_param_grid_list[1],
+                                               max_depth=max_depth_best_param_grid_search_two,
+                                               min_samples_split=min_samples_split_best_param_grid_search_two,
+                                               min_samples_leaf=min_samples_leaf_best_param_grid_search_three,
+                                               max_features=max_features_best_param_grid_search_four,
+                                               subsample=subsample_best_param_grid_search_five)
+        gbm_predict = cross_val_predict(gbm_final, x, y, cv=5)
+        conf_matr = confusion_matrix(y_true=y, y_pred=gbm_predict)
+        # print(conf_matr)
+        model_search_gbm.append([gbm_final.get_params(), conf_matr[0][0], conf_matr[0][1],
+                                 conf_matr[1][0], conf_matr[1][1], set(x_all).difference(x)])
+        # Obtain feature importances
+        gradient_boosting_feature_importance = pd.DataFrame(data=[list(x),
+            gbm_final.fit(x, y).feature_importances_.tolist()]).T.rename(columns={0:'variable',
+            1:'importance'}).sort_values(by='importance', ascending=False)
+        # Remove 'worst' variables one-by-one
+        print(gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.10])
+        if len(gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01]) > 0:
+            for i in range(1, len(gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01]) + 1):
+                print(f"'Worst' variable being examined: "
+                      f"{gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01].variable.values[-i]}")
+                bottom_variable = gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance < 0.01].variable.values[-i]
+                # Add related one-hot encoded variables if variable is categorical
+                if bottom_variable.split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x)])) if len(x) == 1]):
+                    bottom_variable = bottom_variable.split('_')[0]
+                    bottom_variable = [col for col in list(x) if bottom_variable in col]
+                compare_counter = 0
+                for var in bottom_variable:
+                    if var in gradient_boosting_feature_importance.loc[gradient_boosting_feature_importance.importance<0.01].variable.values:
+                        compare_counter += 1
+                if len(bottom_variable) == compare_counter:
+                    print(f"Following variable(s) will be dropped from x {bottom_variable}")
+                    x = x.drop(columns=bottom_variable)
+                    break
+                else:
+                    print("Next 'worst' variable will be examined for dropping.")
+                    continue
+            # else:
+            #     x = x.drop(columns=bottom_variable)
             else:
-                print("Next 'worst' variable will be examined for dropping.")
-                continue
-        # else:
-        #     x = x.drop(columns=bottom_variable)
-        else:
-            break
-# Create DataFrame of random forest classifer results
-model_search_gbm = pd.DataFrame(model_search_gbm, columns=['model_params_grid_search',
-                                             'true_negatives', 'false_positives',
-                                             'false_negatives', 'true_positives', 'variables_not_used'])
-# Create recall and precision columns
-model_search_gbm['recall'] = model_search_gbm.true_positives/(model_search_gbm.true_positives + model_search_gbm.false_negatives)
-model_search_gbm['precision'] = model_search_gbm.true_positives/(model_search_gbm.true_positives + model_search_gbm.false_positives)
-model_search_gbm['f1_score'] = 2 * (model_search_gbm.precision * model_search_gbm.recall) / (model_search_gbm.precision + model_search_gbm.recall)
+                break
+    # Create DataFrame of random forest classifer results
+    model_search_gbm = pd.DataFrame(model_search_gbm, columns=['model_params_grid_search',
+                                                 'true_negatives', 'false_positives',
+                                                 'false_negatives', 'true_positives', 'variables_not_used'])
+    # Create recall and precision columns
+    model_search_gbm['recall'] = model_search_gbm.true_positives/(model_search_gbm.true_positives + model_search_gbm.false_negatives)
+    model_search_gbm['precision'] = model_search_gbm.true_positives/(model_search_gbm.true_positives + model_search_gbm.false_positives)
+    model_search_gbm['f1_score'] = 2 * (model_search_gbm.precision * model_search_gbm.recall) / (model_search_gbm.precision + model_search_gbm.recall)
+    # Sort DataFrame
+    model_search_gbm = model_search_gbm.sort_values(by=['f1_score'], ascending=False)
+    print(model_search_gbm)
+
+    # Choose top model from gbm model search
+    if len(model_search_gbm.loc[model_search_gbm.f1_score==model_search_gbm.f1_score.max()]) > 1:
+        top_model_result_gbm = model_search_gbm.loc[(model_search_gbm.f1_score == model_search_gbm.f1_score.max()) &
+            (model_search_gbm['variables_not_used'].apply(len) == max(map(lambda x: len(x[list(model_search_gbm).index('variables_not_used')]),
+             model_search_gbm.loc[model_search_gbm.f1_score==model_search_gbm.f1_score.max()].values)))]
+    else:
+        top_model_result_gbm = model_search_gbm.loc[model_search_gbm.f1_score == model_search_gbm.f1_score.max()]
+    top_model_results = top_model_results.append(other=top_model_result_gbm, sort=False)
+    print(top_model_result_gbm)
+
+    # Append top_model_result_rfc results to all_model_results DataFrame
+    # Re-create feature variables
+    x = model.drop(columns='num')
+    gbm_predict_proba = cross_val_predict(GradientBoostingClassifier(learning_rate=top_model_result_gbm["model_params_grid_search"].values[0]["learning_rate"],
+                                               n_estimators=top_model_result_gbm["model_params_grid_search"].values[0]["n_estimators"],
+                                               max_depth=top_model_result_gbm["model_params_grid_search"].values[0]["max_depth"],
+                                               min_samples_split=top_model_result_gbm["model_params_grid_search"].values[0]["min_samples_split"],
+                                               min_samples_leaf=top_model_result_gbm["model_params_grid_search"].values[0]["min_samples_leaf"],
+                                               max_features=top_model_result_gbm["model_params_grid_search"].values[0]["max_features"],
+                                               subsample=top_model_result_gbm["model_params_grid_search"].values[0]["subsample"]),
+                     x[[x for x in list(x) if x not in list(top_model_result_gbm['variables_not_used'].values[0])]], y, cv=5, method='predict_proba')
+    all_model_results['gbm_'+inflect.engine().number_to_words(index)+'_pred_zero'] = gbm_predict_proba[:,0]
+    all_model_results['gbm_'+inflect.engine().number_to_words(index)+'_pred_one'] = gbm_predict_proba[:,1]
+
+
+
+
+# logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
+#                 y_train).predict(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']]))
+
+
+for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
+    # ROC Curve plot
+    plt.figure()
+    # Draw ROC Curves for all logit models on one plot
+    for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
+        fpr, tpr, thresholds = roc_curve(y, all_model_results[pred_one_col])
+        plt.plot(fpr, tpr, label=pred_one_col.split("_")[1])
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(f'Receiver operating characteristic for {value} models')
+    plt.legend(loc="lower right")
+
+
+# Create DataFrame of results
+roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
+# Rename columns
+roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
+
+#
+# # Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
+# i = np.arange(len(tpr))
+# roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
+# roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
+# list(roc_t['threshold'])
+#
+# # Want high sensitivity (want to miss as few 1 patients as possible and okay to miss on a few extra 0 patients)
+# # The "missed" 0's could be potential 1's in the future if conditions for them worsen
+# # Optimal cut-off value from this -> fpr = 0.229508  tpr = 0.861111  threshold = 0.402949
+# # DataFrame of roc curve values
+# roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
+# # Rename columns
+# roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Get combinations of length 1,3, and 5 (take mode of 3 and 5)
+model_search_all = []
+for length in [1, 3,5]:
+    for comb in itertools.combinations(['logit', 'rfc', 'svc', 'knn', 'gbm'], length):
+        print(list(comb))
+        print(confusion_matrix(y_true=y, y_pred=all_model_results[list(comb)].mode(axis=1)))
+        conf_matr = confusion_matrix(y_true=y, y_pred=all_model_results[list(comb)].mode(axis=1))
+        model_search_all.append([comb, conf_matr[0][0], conf_matr[0][1], conf_matr[1][0], conf_matr[1][1]])
+        print('\n')
+# Create DataFrame of results
+model_search_all = pd.DataFrame(model_search_all, columns=['cols', 'true_negatives', 'false_positives',
+                                             'false_negatives', 'true_positives'])
+# Create recall, precision, and f1-score columns
+model_search_all['recall'] = model_search_all.true_positives/(model_search_all.true_positives + model_search_all.false_negatives)
+model_search_all['precision'] = model_search_all.true_positives/(model_search_all.true_positives + model_search_all.false_positives)
+model_search_all['f1_score'] = 2 * (model_search_all.precision * model_search_all.recall) / (model_search_all.precision + model_search_all.recall)
 # Sort DataFrame
-model_search_gbm = model_search_gbm.sort_values(by=['f1_score'], ascending=False)
-
-# Choose top model from gbm model search
-if len(model_search_gbm.loc[model_search_gbm.f1_score==model_search_gbm.f1_score.max()]) > 1:
-    top_model_result_gbm = model_search_gbm.loc[(model_search_gbm.f1_score == model_search_gbm.f1_score.max()) &
-        (model_search_gbm['variables_not_used'].apply(len) == max(map(lambda x: len(x[list(model_search_gbm).index('variables_not_used')]),
-         model_search_gbm.loc[model_search_gbm.f1_score==model_search_gbm.f1_score.max()].values)))]
-
+model_search_all = model_search_all.sort_values(by=['f1_score'], ascending=False)
 
 
 
