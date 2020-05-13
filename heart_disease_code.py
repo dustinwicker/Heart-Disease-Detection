@@ -1,6 +1,5 @@
 import pandas as pd
 import os
-from sklearn import preprocessing
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from math import sqrt
 from scipy import stats
@@ -19,6 +18,7 @@ from sklearn.exceptions import ConvergenceWarning
 import statsmodels.api as sm
 import itertools
 import inflect
+from more_itertools import unique_everseen
 # import seaborn as sns
 # import matplotlib.pyplot as plt
 
@@ -81,7 +81,7 @@ hungarian = hungarian.drop(columns=cols_to_drop)
 hungarian = hungarian.apply(pd.to_numeric)
 
 # Method to scale continuous and binary variables (z-score standardization)
-scaler = preprocessing.StandardScaler()
+scaler = StandardScaler()
 
 ## Fix possible patient id issues
 # Find ids that are not unique to patients
@@ -918,7 +918,7 @@ hungarian['agebinned'] = pd.cut(x=hungarian.age, bins=5, labels = ['0', '1', '2'
 # Create empty DataFrame to append all model results to
 all_model_results = pd.DataFrame()
 # Create DataFrame to append top model results to
-top_model_results = pd.DataFrame(columns=['solver', 'best_model_params_grid_search', 'best_score_grid_search',
+top_model_results = pd.DataFrame(columns=['model_type', 'solver', 'best_model_params_grid_search', 'best_score_grid_search',
                                           'true_negatives', 'false_positives', 'false_negatives', 'true_positives',
                                           'recall', 'precision', 'f1_score', 'variables_not_used', 'variables_used',
                                           'model_params_grid_search'])
@@ -1041,7 +1041,7 @@ categorical_variables_for_modeling_list = [categorical_variables_for_modeling_on
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
-    print(index)
+    print(f"Model run: {index}")
     # Create copy of hungarian for regression modeling
     model = hungarian.copy()
     # Drop variables
@@ -1188,6 +1188,9 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     all_model_results['logit_'+inflect.engine().number_to_words(index)+'_pred_zero'] = logit_predict_proba[:,0]
     all_model_results['logit_'+inflect.engine().number_to_words(index)+'_pred_one'] = logit_predict_proba[:,1]
 
+# Fill in model_type columns
+top_model_results['model_type'] = top_model_results['model_type'].fillna(value='logit')
+
 # # Create all possible feature combinations for regression
 # variable_combinations = []
 # for length in range(1, len(list(x)[:-15] + list(set([var.split("_")[0] for var in list(x)[-15:]])))+1):
@@ -1296,7 +1299,7 @@ from sklearn.metrics import roc_curve
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
-    print(index)
+    print(f"Model run: {index}")
     # Create copy of hungarian for non-regression modeling
     model = hungarian.copy()
     # Drop columns
@@ -1312,7 +1315,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     random_forest_model = RandomForestClassifier(random_state=1)
     # Define parameters for grid search
     param_grid = {'n_estimators': np.arange(10, 111, step=5), 'criterion': ['gini', 'entropy'],
-                  'max_features': np.arange(2, 27, step=3)}
+                  'max_features': np.arange(2, 25, step=3)}
     cv = ShuffleSplit(n_splits=5, test_size=0.3)
 
     # Define grid search CV parameters
@@ -1321,10 +1324,20 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     x_all = list(x)
     model_search_rfc = []
     while True:
+        print("--------------------------------")
+        print(len(list(x)))
+        print(print(param_grid['max_features']))
+        print("--------------------------------")
+        # try:
         grid_search.fit(x, y)
+        # except ValueError:
+        #     param_grid = {'n_estimators': np.arange(10, 111, step=5), 'criterion': ['gini', 'entropy'],
+        #                   'max_features': np.arange(2, len(list(x)), step=3)}
+        #     # Define grid search CV parameters
+        #     grid_search = GridSearchCV(random_forest_model, param_grid, cv=cv)
+        #     grid_search.fit(x, y)
         print(f'Best parameters for current grid seach: {grid_search.best_params_}')
         print(f'Best score for current grid seach: {grid_search.best_score_}')
-        # print(grid_search.best_params_, grid_search.best_score_) # {'criterion': 'entropy', 'max_features': 7, 'n_estimators': 15} 0.8409090909090909
         # Define parameters of Random Forest Classifier from grid search
         random_forest_model = RandomForestClassifier(criterion=grid_search.best_params_['criterion'],
                                                      max_features=grid_search.best_params_['max_features'],
@@ -1375,12 +1388,16 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     print(model_search_rfc)
 
     if len(model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()]) > 1:
-        print("Fix multiple best model problem for rfc")
-        break
+        top_model_result_rfc = model_search_rfc.loc[(model_search_rfc.f1_score==model_search_rfc.f1_score.max()) &
+            (model_search_rfc['variables_not_used'].apply(len) == max(map(lambda x: len(x[list(model_search_rfc).index('variables_not_used')]),
+             model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()].values)))]
+        if len(top_model_result_rfc) > 1:
+            print("Fix multiple best model problem for rfc")
+            break
     else:
         top_model_result_rfc = model_search_rfc.loc[model_search_rfc.f1_score==model_search_rfc.f1_score.max()]
     top_model_results = top_model_results.append(other=top_model_result_rfc, sort=False)
-    print(top_model_result_rfc)
+    print(f"Top rfc model: \n {top_model_result_rfc}")
 
     # Append top_model_result_rfc results to all_model_results DataFrame
     # Re-create feature variables
@@ -1388,18 +1405,22 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     rfc_predict_proba = cross_val_predict(RandomForestClassifier(criterion=top_model_result_rfc["best_model_params_grid_search"].values[0]['criterion'],
                      max_features=top_model_result_rfc["best_model_params_grid_search"].values[0]['max_features'],
                      n_estimators=top_model_result_rfc["best_model_params_grid_search"].values[0]['n_estimators']),
-                     x[[x for x in list(x) if x not in list(top_model_result_rfc['variables_not_used'].values[0])]], y, cv=5, method='predict_proba')
+                     x[[x for x in list(x) if x not in list(top_model_result_rfc['variables_not_used'].values[0])]], y,
+                                          cv=5, method='predict_proba')
     all_model_results['rfc_'+inflect.engine().number_to_words(index)+'_pred_zero'] = rfc_predict_proba[:,0]
     all_model_results['rfc_'+inflect.engine().number_to_words(index)+'_pred_one'] = rfc_predict_proba[:,1]
+
+# Fill in model_type columns
+top_model_results['model_type'] = top_model_results['model_type'].fillna(value='rfc')
 
 
 ### Support-vector machine classifer
 # Standard scale continuous variables
-scaler = StandardScaler()
+# scaler = StandardScaler()
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
-    print(index)
+    print(f"Model run: {index}")
     # Create copy of hungarian for non-regression modeling
     model = hungarian.copy()
     # Drop columns
@@ -1467,12 +1488,14 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
         top_model_result_svc = model_search_svc.loc[(model_search_svc.f1_score == model_search_svc.f1_score.max()) &
             (model_search_svc['variables_used'].apply(len) == min(map(lambda x: len(x[list(model_search_svc).index('variables_used')]),
              model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()].values)))]
-        if len(top_model_result_svc) > 1: ########################
-            top_model_result_svc = top_model_result_svc.loc[top_model_result_svc.best_score_grid_search == top_model_result_svc.best_score_grid_search.max()]
+        if len(top_model_result_svc) > 1:
+            print('break here')
+            break
+            # top_model_result_svc = top_model_result_svc.loc[top_model_result_svc.best_score_grid_search == top_model_result_svc.best_score_grid_search.max()]
     else:
         top_model_result_svc = model_search_svc.loc[model_search_svc.f1_score==model_search_svc.f1_score.max()]
     top_model_results = top_model_results.append(other=top_model_result_svc, sort=False)
-    print(top_model_result_svc)
+    print(f"Top svc model: \n {top_model_result_svc}")
 
     # Append top_model_result_svc results to all_model_results DataFrame
     all_model_results['svc_'+inflect.engine().number_to_words(index)] = cross_val_predict(SVC(
@@ -1481,14 +1504,17 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
         gamma=top_model_result_svc['best_model_params_grid_search'].values[0]['gamma']),
         x_std[top_model_result_svc['variables_used'].values[0]], y, cv=5)
 
+# Fill in model_type columns
+top_model_results['model_type'] = top_model_results['model_type'].fillna(value='svc')
+
 
 ### K-Nearest Neighbors
 # Standard scale continuous variables
-scaler = StandardScaler()
+# scaler = StandardScaler()
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
-    print(index)
+    print(f"Model run: {index}")
     # Create copy of hungarian for non-regression modeling
     model = hungarian.copy()
     # Drop columns
@@ -1583,7 +1609,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     else:
         top_model_result_knn = model_search_knn.loc[model_search_knn.f1_score==model_search_knn.f1_score.max()]
     top_model_results = top_model_results.append(other=top_model_result_knn, sort=False)
-    print(top_model_result_knn)
+    print(f"Top knn model: \n {top_model_result_knn}")
 
     # Append top_model_result_knn results to all_model_results DataFrame
     knn_predict_proba = cross_val_predict(KNeighborsClassifier(metric='minkowski',
@@ -1593,13 +1619,14 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     all_model_results['knn_'+inflect.engine().number_to_words(index)+'_pred_zero'] = knn_predict_proba[:,0]
     all_model_results['knn_'+inflect.engine().number_to_words(index)+'_pred_one'] = knn_predict_proba[:,1]
 
-
+# Fill in model_type columns
+top_model_results['model_type'] = top_model_results['model_type'].fillna(value='knn')
 
 ### Gradient-boosting model
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
-    print(index)
+    print(f"Model run: {index}")
     # Create copy of hungarian for non-regression modeling
     model = hungarian.copy()
     # Drop columns
@@ -1787,7 +1814,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     else:
         top_model_result_gbm = model_search_gbm.loc[model_search_gbm.f1_score == model_search_gbm.f1_score.max()]
     top_model_results = top_model_results.append(other=top_model_result_gbm, sort=False)
-    print(top_model_result_gbm)
+    print(f"Top gbm model: \n {top_model_result_gbm}")
 
     # Append top_model_result_rfc results to all_model_results DataFrame
     # Re-create feature variables
@@ -1803,7 +1830,17 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     all_model_results['gbm_'+inflect.engine().number_to_words(index)+'_pred_zero'] = gbm_predict_proba[:,0]
     all_model_results['gbm_'+inflect.engine().number_to_words(index)+'_pred_one'] = gbm_predict_proba[:,1]
 
+# Fill in model_type columns
+top_model_results['model_type'] = top_model_results['model_type'].fillna(value='gbm')
 
+# Save top_model_results to csv
+top_model_results.to_pickle('top_model_results.pkl')
+
+# Save all_model_results to csv
+all_model_results.to_pickle('all_model_results.pkl')
+
+# Re-assign index of top_model_results
+# top_model_results.index = list(itertools.chain.from_iterable(itertools.repeat(range(1,8), 5)))
 
 
 # logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
@@ -1812,7 +1849,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 
 for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
     # ROC Curve plot
-    plt.figure()
+    plt.figure(figsize=(13,7.5))
     # Draw ROC Curves for all logit models on one plot
     for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
         fpr, tpr, thresholds = roc_curve(y, all_model_results[pred_one_col])
@@ -1824,6 +1861,7 @@ for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.co
     plt.ylabel('True Positive Rate')
     plt.title(f'Receiver operating characteristic for {value} models')
     plt.legend(loc="lower right")
+    plt.savefig("roc_"+value+".png")
 
 
 # Create DataFrame of results
