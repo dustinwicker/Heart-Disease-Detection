@@ -19,8 +19,9 @@ import statsmodels.api as sm
 import itertools
 import inflect
 from more_itertools import unique_everseen
+import matplotlib.pyplot as plt
 # import seaborn as sns
-# import matplotlib.pyplot as plt
+
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
@@ -1835,16 +1836,38 @@ top_model_results['model_type'] = top_model_results['model_type'].fillna(value='
 
 # Save top_model_results to csv
 top_model_results.to_pickle('top_model_results.pkl')
-
 # Save all_model_results to csv
 all_model_results.to_pickle('all_model_results.pkl')
 
 # Re-assign index of top_model_results
-# top_model_results.index = list(itertools.chain.from_iterable(itertools.repeat(range(1,8), 5)))
+top_model_results.index = list(itertools.chain.from_iterable(itertools.repeat(range(1,8), 5)))
+
+# Retreive best model run from each algorithm (base off f-1 score)
+top_model_from_each_algorithm = pd.DataFrame(columns=top_model_results.columns)
+for value in list(unique_everseen(top_model_results.model_type)):
+   if len(top_model_results.loc[(top_model_results.model_type == value) &
+        (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())]) > 1:
+       # Create DataFrame to get best model from remaining
+       gt_one_top_model = top_model_results.loc[(top_model_results.model_type == value) &
+        (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())]
+       if value == 'logit':
+           # Get DataFrame with least amount of variables used (parsimonious model)
+           if len(gt_one_top_model.loc[gt_one_top_model.variables_used.apply(len) == gt_one_top_model.variables_used.apply(len).min()])>1:
+               # Sample random one from remaining
+               top_model_from_each_algorithm = top_model_from_each_algorithm.append(other=gt_one_top_model.sample(n=1))
+       else:
+           print(value)
+           break
+   else:
+       top_model_from_each_algorithm = top_model_from_each_algorithm.append(other=top_model_results.loc[(top_model_results.model_type == value) &
+        (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())])
 
 
-# logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
-#                 y_train).predict(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']]))
+
+
+
+
+
 
 
 for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
