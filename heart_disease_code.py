@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split, GridSearchCV, ShuffleSplit
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.feature_selection import RFE
 from sklearn.preprocessing import StandardScaler
@@ -20,7 +20,7 @@ import itertools
 import inflect
 from more_itertools import unique_everseen
 import matplotlib.pyplot as plt
-# import seaborn as sns
+import seaborn as sns
 
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
@@ -1247,8 +1247,7 @@ top_model_results['model_type'] = top_model_results['model_type'].fillna(value='
 #                                         (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
 #                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
 
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics import roc_curve
+
 # logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
 #                 y_train).predict(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']]))
 # fpr, tpr, thresholds = roc_curve(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
@@ -1862,14 +1861,7 @@ for value in list(unique_everseen(top_model_results.model_type)):
        top_model_from_each_algorithm = top_model_from_each_algorithm.append(other=top_model_results.loc[(top_model_results.model_type == value) &
         (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())])
 
-
-
-
-
-
-
-
-
+# Build ROC Curvs for all models which give prediction probabilities
 for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
     # ROC Curve plot
     plt.figure(figsize=(13,7.5))
@@ -1885,6 +1877,53 @@ for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.co
     plt.title(f'Receiver operating characteristic for {value} models')
     plt.legend(loc="lower right")
     plt.savefig("roc_"+value+".png")
+
+all_cut_offs = []
+# Go through various cut-offs for each model run that returns predicted probabilities
+for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
+    print("-" * 80)
+    print(value)
+    for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
+        print(pred_one_col)
+        for cut_off in np.arange(0,1.01,step=0.01):
+            print(cut_off)
+            print("-" * 80)
+            cf = confusion_matrix(y_true=y, y_pred=np.where(all_model_results[pred_one_col] > cut_off, 1, 0))
+            all_cut_offs.append([pred_one_col, cut_off, cf[0][0], cf[0][1], cf[1][0], cf[1][1]])
+
+# Create DataFrame of results
+all_cut_offs = pd.DataFrame(all_cut_offs, columns=["model", "cut_off", 'true_negatives', 'false_positives',
+                                                   'false_negatives', 'true_positives'])
+# Create recall, precision, and f1_score columns
+all_cut_offs['recall'] = all_cut_offs.true_positives/(all_cut_offs.true_positives + all_cut_offs.false_negatives)
+all_cut_offs['precision'] = all_cut_offs.true_positives/(all_cut_offs.true_positives + all_cut_offs.false_positives)
+all_cut_offs['f1_score'] = 2 * (all_cut_offs.precision * all_cut_offs.recall) / (all_cut_offs.precision + all_cut_offs.recall)
+# Create total correct and total wrong columns
+all_cut_offs["total_correct"] = all_cut_offs.true_negatives + all_cut_offs.true_positives
+all_cut_offs["total_wrong"] = all_cut_offs.false_positives + all_cut_offs.false_negatives
+
+# Groupby and take top row from each groupby
+all_cut_offs = all_cut_offs.groupby(["model"]).apply(lambda x: (x.sort_values(["total_correct",
+                                            "f1_score"], ascending = [False, False])).head(1)).reset_index(drop=True)
+
+# Get the model type (first part of model before "_") to groupby on it
+all_cut_offs["model_type"] = all_cut_offs["model"].apply(lambda x: x.split("_")[0])
+
+# Get top model from each algorithm
+all_cut_offs =  all_cut_offs.groupby(["model_type"]).apply(lambda x: (x.sort_values(["total_correct",
+                                            "f1_score"], ascending = [False, False])).head(1)).reset_index(drop=True)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Create DataFrame of results
