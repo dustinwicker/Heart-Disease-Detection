@@ -862,15 +862,6 @@ handles, legends = ax.get_legend_handles_labels()
 fig.legend(handles, legends, loc='upper left')
 plt.savefig('continuous_with_boxcox_hist.png')
 
-# Add boxcox'd variables to continuous_variables list
-continuous_variables.extend([x for x in list(hungarian) if 'boxcox' in x])
-
-# Correlations > 0.6
-print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr() > 0.6])
-# Correlations > 0.6 and < 1.0, drop all null columns
-hungarian[continuous_variables].corr()[(hungarian[continuous_variables].corr() > 0.6) &
-                                       (hungarian[continuous_variables].corr() < 1.0)].dropna(axis=1, how='all')
-
 # Pearson chi-square tests
 chi_square_analysis_list = []
 for categorical in categorical_variables:
@@ -914,6 +905,17 @@ hungarian["chol_div_by_thalrest_boxcox"] = hungarian["chol"]/hungarian["thalrest
 hungarian["thalrest_boxcox_div_by_rldv5"] = hungarian["thalrest_boxcox"]/hungarian["rldv5"]
 # Bin age
 hungarian['agebinned'] = pd.cut(x=hungarian.age, bins=5, labels = ['0', '1', '2', '3', '4'])
+
+# Add boxcox'd variables to continuous_variables list
+continuous_variables.extend([x for x in list(hungarian) if 'boxcox' in x])
+# Add iteraction variables to continuous_variables list
+continuous_variables.extend([x for x in list(hungarian) if 'div_by' in x])
+
+# Correlations > 0.6
+print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr() > 0.6])
+# Correlations > 0.6 and < 1.0, drop all null columns
+hungarian[continuous_variables].corr()[(hungarian[continuous_variables].corr() > 0.6) &
+                                       (hungarian[continuous_variables].corr() < 1.0)].dropna(axis=1, how='all')
 
 ############## Plot results form each model run on ROC Curve to better observe best cut-off value ######################
 # Create empty DataFrame to append all model results to
@@ -1885,7 +1887,7 @@ for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.co
     print(value)
     for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
         print(pred_one_col)
-        for cut_off in np.arange(0,1.01,step=0.01):
+        for cut_off in np.arange(0,1.01,step=0.001):
             print(cut_off)
             print("-" * 80)
             cf = confusion_matrix(y_true=y, y_pred=np.where(all_model_results[pred_one_col] > cut_off, 1, 0))
@@ -1913,11 +1915,39 @@ all_cut_offs["model_type"] = all_cut_offs["model"].apply(lambda x: x.split("_")[
 all_cut_offs =  all_cut_offs.groupby(["model_type"]).apply(lambda x: (x.sort_values(["total_correct",
                                             "f1_score"], ascending = [False, False])).head(1)).reset_index(drop=True)
 
+all_cut_offs_results = pd.DataFrame()
+# Get predictions with each of the models
+for model, cut_off in zip(all_cut_offs.model, all_cut_offs.cut_off):
+    print(model, cut_off)
+    all_cut_offs_results[model] = np.where(all_model_results[model] > cut_off, 1, 0)
+# Append best svc model to all_cut_offs_results
+all_cut_offs_results["svc_" + inflect.engine().number_to_words(
+    top_model_from_each_algorithm.loc[top_model_from_each_algorithm.model_type=="svc"].index[0])] = \
+    all_model_results["svc_" + inflect.engine().number_to_words(
+        top_model_from_each_algorithm.loc[top_model_from_each_algorithm.model_type=="svc"].index[0])]
 
-
-
-
-
+# Get combinations of length 1,3, and 5 (take mode of 3 and 5)
+model_search_all = []
+for length in [1, 3,5]:
+    for comb in itertools.combinations(all_cut_offs_results.columns, length):
+        print(list(comb))
+        print(confusion_matrix(y_true=y, y_pred=all_cut_offs_results[list(comb)].mode(axis=1)))
+        conf_matr = confusion_matrix(y_true=y, y_pred=all_cut_offs_results[list(comb)].mode(axis=1))
+        model_search_all.append([comb, conf_matr[0][0], conf_matr[0][1], conf_matr[1][0], conf_matr[1][1]])
+        print('\n')
+# Create DataFrame of results
+model_search_all = pd.DataFrame(model_search_all, columns=['cols', 'true_negatives', 'false_positives',
+                                             'false_negatives', 'true_positives'])
+# Create recall, precision, and f1-score columns
+model_search_all['recall'] = model_search_all.true_positives/(model_search_all.true_positives + model_search_all.false_negatives)
+model_search_all['precision'] = model_search_all.true_positives/(model_search_all.true_positives + model_search_all.false_positives)
+model_search_all['f1_score'] = 2 * (model_search_all.precision * model_search_all.recall) / (model_search_all.precision + model_search_all.recall)
+# Create total correct and total wrong columns
+model_search_all["total_correct"] = model_search_all.true_negatives + model_search_all.true_positives
+model_search_all["total_wrong"] = model_search_all.false_positives + model_search_all.false_negatives
+# Sort DataFrame
+model_search_all = model_search_all.sort_values(by=['total_correct','f1_score'], ascending=[False, False])
+print(model_search_all)
 
 
 
