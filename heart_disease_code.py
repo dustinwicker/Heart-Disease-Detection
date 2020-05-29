@@ -9,7 +9,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split, GridSearchCV, ShuffleSplit
 from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.feature_selection import RFE
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -87,6 +86,7 @@ scaler = StandardScaler()
 ## Fix possible patient id issues
 # Find ids that are not unique to patients
 print(hungarian.id.value_counts()[hungarian.id.value_counts()!=1])
+
 # Fix id 1132 (two different patients are both assigned to this id) - give second patient next id number (id max + 1)
 hungarian.loc[139,'id'] = hungarian.id.max() + 1
 
@@ -689,6 +689,31 @@ hungarian.loc[hungarian[impute_variable]==-9, impute_variable] = chol_prediction
 ################ Keep as is with different levels #####################################
 hungarian.loc[hungarian.num > 0, "num"] = 1
 
+### Data visualizations and statistical analysis ###
+
+# Determine 'strong' alpha value based on sample size (AA 501, 3 - More Complex ANOVA Regression)
+sample_size_one, strong_alpha_value_one = 100, 0.001
+sample_size_two, strong_alpha_value_two = 1000, 0.0003
+slope = (strong_alpha_value_two - strong_alpha_value_one)/(sample_size_two - sample_size_one)
+strong_alpha_value = slope * (hungarian.shape[0] - sample_size_one) + strong_alpha_value_one
+print(f"The alpha value for use in hypothesis tests is {strong_alpha_value}.")
+
+### Exploratory data analysis ###
+
+# Set aesthetic parameters
+sns.set()
+
+# List of continuous variables
+continuous_variables = ['age', 'trestbps', 'chol', 'thaldur', 'met', 'thalach', 'thalrest', 'tpeakbps', 'tpeakbpd',
+                        'trestbpd', 'oldpeak', 'rldv5', 'rldv5e']
+
+# List of categorical variables
+categorical_variables = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop', 'nitr',
+                         'pro', 'diuretic', 'proto', 'exang', 'lvx3', 'lvx4', 'lvf']
+
+# Target variable
+target_variable = 'num'
+
 ### Feature engineering ###
 
 # Create column of time between ekg and cardiac cath
@@ -714,39 +739,46 @@ hungarian['cardiac_cath_date'] = cardiac_cath_date
 # Days between cardiac cath and ekg
 hungarian['days_between_c_ekg'] = (pd.to_datetime(hungarian.cardiac_cath_date) - pd.to_datetime(hungarian.ekg_date)).dt.days
 
-### Data visualizations and statistical analysis ###
+# Append days between cardiac cath and ekg to continuous variable list
+continuous_variables.append('days_between_c_ekg')
 
-# Determine 'strong' alpha value based on sample size (AA 501, 3 - More Complex ANOVA Regression)
-sample_size_one, strong_alpha_value_one = 100, 0.001
-sample_size_two, strong_alpha_value_two = 1000, 0.0003
-slope = (strong_alpha_value_two - strong_alpha_value_one)/(sample_size_two - sample_size_one)
-strong_alpha_value = slope * (hungarian.shape[0] - sample_size_one) + strong_alpha_value_one
-print(f"The alpha value for use in hypothesis tests is {strong_alpha_value}.")
-
-### Exploratory data analysis ###
-
-# Set aesthetic parameters
-sns.set()
-
-# List of continuous variables
-continuous_variables = ['age', 'trestbps', 'chol', 'thaldur', 'met', 'thalach', 'thalrest', 'tpeakbps', 'tpeakbpd',
-                        'trestbpd', 'oldpeak', 'rldv5', 'rldv5e', 'days_between_c_ekg']
-
-# List of categorical variables
-categorical_variables = ['sex', 'painloc', 'painexer', 'relrest', 'cp', 'htn', 'fbs', 'restecg', 'prop', 'nitr',
-                         'pro', 'diuretic', 'proto', 'exang', 'lvx3', 'lvx4', 'lvf']
-
-# Target variable
-target_variable = 'num'
-
-### Create PCA variable from rldv5 and rldv5e
+# Create PCA variable from rldv5 and rldv5e
 hungarian['rldv5_rldv5e_pca'] = PCA(n_components=1).fit_transform(hungarian[['rldv5', 'rldv5e']])
 
 # Append new PCA'd variable to continuous variable list
 continuous_variables.append('rldv5_rldv5e_pca')
 
+# Dicitionary with continuous variable as key and spelled out version of variablea as value
+continuous_variables_spelled_out_dict = {'age': 'Age', 'trestbps': 'Resting Blood Pressure (On Admission)',
+                                         'chol': 'Serum Cholestoral', 'thaldur': 'Duration of Exercise Test (Minutes)',
+                                         'met': 'METs Achieved', 'thalach': 'Maximum Heart Rate Achieved',
+                                         'thalrest': 'Resting Heart Rate',
+                                         'tpeakbps': 'Peak Exercise Blood Pressure (Systolic)',
+                                         'tpeakbpd': 'Peak Exercise Blood Pressure (Diastolic)',
+                                         'trestbpd': 'Resting Blood Pressure',
+                                         'oldpeak': 'ST Depression Induced by Exercise Relative to Rest',
+                                         'rldv5': 'Height at Rest',
+                                         'rldv5e': 'Height at Peak Exercise',
+                                         'days_between_c_ekg': 'Days Between Cardiac Catheterization and Electrocardiogram',
+                                         'rldv5_rldv5e_pca': "PCA variable for 'Height at Rest' and 'Height at Peak Exercise'"}
+
 # Heatmap of correlations
-sns.heatmap(hungarian[continuous_variables].corr())
+# Only return bottom portion of heatmap as top is duplicate and diagonal is redundant
+continuous_variable_correlations = hungarian[continuous_variables].corr()
+# Array of zeros with same shape as continuous_variable_correlations
+mask = np.zeros_like(continuous_variable_correlations)
+# Mark upper half and diagonal of mask as True
+mask[np.triu_indices_from(mask)] = True
+# Correlation heatmap
+f, ax = plt.subplots(figsize=(9, 6))
+f.subplots_adjust(left=0.32, right=0.89, top=0.95, bottom=0.32)
+ax = sns.heatmap(hungarian[continuous_variables].corr(), cmap='PiYG', mask=mask, linewidths=.5, linecolor="white", cbar=True)
+ax.set_xticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':10},
+                   rotation=45, ha="right",
+                   rotation_mode="anchor")
+ax.set_yticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':10})
+ax.set_title("Heatmap of Continuous Predictor Variables", fontdict ={'fontweight': 'bold', 'fontsize': 22})
+# f.tight_layout()
 # Correlations > 0.6
 print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr()>0.6])
 # Correlations < 0.6
@@ -1887,7 +1919,7 @@ for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.co
     print(value)
     for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
         print(pred_one_col)
-        for cut_off in np.arange(0,1.01,step=0.001):
+        for cut_off in np.arange(0,1.01,step=0.01):
             print(cut_off)
             print("-" * 80)
             cf = confusion_matrix(y_true=y, y_pred=np.where(all_model_results[pred_one_col] > cut_off, 1, 0))
@@ -1962,11 +1994,11 @@ roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
 roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
 
 #
-# # Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
-# i = np.arange(len(tpr))
-# roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
-# roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
-# list(roc_t['threshold'])
+# Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
+i = np.arange(len(tpr))
+roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
+roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
+list(roc_t['threshold'])
 #
 # # Want high sensitivity (want to miss as few 1 patients as possible and okay to miss on a few extra 0 patients)
 # # The "missed" 0's could be potential 1's in the future if conditions for them worsen
