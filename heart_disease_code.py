@@ -777,7 +777,7 @@ ax.set_xticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdic
                    rotation=45, ha="right",
                    rotation_mode="anchor")
 ax.set_yticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':10})
-ax.set_title("Heatmap of Continuous Predictor Variables", fontdict ={'fontweight': 'bold', 'fontsize': 22})
+ax.set_title("Heatmap of Continuous Predictor Features", fontdict ={'fontweight': 'bold', 'fontsize': 22})
 # f.tight_layout()
 # Correlations > 0.6
 print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr()>0.6])
@@ -785,48 +785,48 @@ print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].cor
 print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr()<-0.6])
 
 ### Do histograms for all continuous variable splitting num (put same variable on same line)
-fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(28,8))
+# fig, axes = plt.subplots(nrows=5, ncols=3, figsize=(28,8))
+# fig.subplots_adjust(hspace=0.5)
+# fig.suptitle('Distributions of Continuous Features')
+#
+# for i, continuous in zip(range(len(axes)), continuous_variables):
+#     axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
+#     axes[i][0].set(title=continuous + "_0")
+#     axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
+#     axes[i][1].set(title=continuous + "_1")
+# plt.savefig('first_four_continuous_hist.png')
+#
+# fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(28,8))
+# fig.subplots_adjust(hspace=0.5)
+# fig.suptitle('Distributions of Continuous Features')
+#
+# for i, continuous in zip(range(len(axes)), continuous_variables[4:8]):
+#     axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
+#     axes[i][0].set(title=continuous + "_0")
+#     axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
+#     axes[i][1].set(title=continuous + "_1")
+# plt.savefig('next_four_continuous_hist.png')
+#
+# fig, axes = plt.subplots(nrows=5, ncols=2, figsize=(28,8))
+# fig.subplots_adjust(hspace=0.5)
+# fig.suptitle('Distributions of Continuous Features')
+#
+# for i, continuous in zip(range(len(axes)), continuous_variables[8:13]):
+#     axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
+#     axes[i][0].set(title=continuous + "_0")
+#     axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
+#     axes[i][1].set(title=continuous + "_1")
+# plt.savefig('last_five_continuous_hist.png')
+
+
+# Histograms for all continuous variable against num
+fig, axes = plt.subplots(nrows=5, ncols=3, figsize=(28,8))
 fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features')
-
-for i, continuous in zip(range(len(axes)), continuous_variables[0:4]):
-    axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
-    axes[i][0].set(title=continuous + "_0")
-    axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
-    axes[i][1].set(title=continuous + "_1")
-plt.savefig('first_four_continuous_hist.png')
-
-fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(28,8))
-fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features')
-
-for i, continuous in zip(range(len(axes)), continuous_variables[4:8]):
-    axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
-    axes[i][0].set(title=continuous + "_0")
-    axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
-    axes[i][1].set(title=continuous + "_1")
-plt.savefig('next_four_continuous_hist.png')
-
-fig, axes = plt.subplots(nrows=5, ncols=2, figsize=(28,8))
-fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features')
-
-for i, continuous in zip(range(len(axes)), continuous_variables[8:13]):
-    axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
-    axes[i][0].set(title=continuous + "_0")
-    axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
-    axes[i][1].set(title=continuous + "_1")
-plt.savefig('last_five_continuous_hist.png')
-
-
-
-fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(28,8))
-fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features')
-for ax, continuous in zip(axes.flatten(), continuous_variables[0:4]):
+fig.suptitle('Distributions of Continuous Features', fontweight= 'bold', fontsize= 22)
+for ax, continuous in zip(axes.flatten(), continuous_variables):
     for num_value in hungarian.num.unique():
         ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
-        ax.set(title=continuous)
+        ax.set_title(continuous_variables_spelled_out_dict[continuous], fontdict ={'fontweight': 'bold', 'fontsize': 12})
 handles, legends = ax.get_legend_handles_labels()
 fig.legend(handles, legends, loc='upper left')
 plt.savefig('first_four_together_continuous_hist.png')
