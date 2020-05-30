@@ -818,18 +818,20 @@ print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].cor
 #     axes[i][1].set(title=continuous + "_1")
 # plt.savefig('last_five_continuous_hist.png')
 
-
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2,9.99]
 # Histograms for all continuous variable against num
-fig, axes = plt.subplots(nrows=5, ncols=3, figsize=(28,8))
-fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features', fontweight= 'bold', fontsize= 22)
+fig, axes = plt.subplots(nrows=5, ncols=3)
+fig.subplots_adjust(left=0.17, right=0.83, top=0.90, bottom=0.10, hspace=0.7, wspace = 0.25)
+fig.suptitle('Distributions of Continuous Features by Target', fontweight= 'bold', fontsize= 22)
 for ax, continuous in zip(axes.flatten(), continuous_variables):
     for num_value in hungarian.num.unique():
         ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
-        ax.set_title(continuous_variables_spelled_out_dict[continuous], fontdict ={'fontweight': 'bold', 'fontsize': 12})
+        ax.set_title(continuous_variables_spelled_out_dict[continuous], fontdict ={'fontweight': 'bold', 'fontsize': 10})
 handles, legends = ax.get_legend_handles_labels()
-fig.legend(handles, legends, loc='upper left')
-plt.savefig('first_four_together_continuous_hist.png')
+legends_spelled_out_dict = {0 : "Presence of Heart Disease", 1: "No Presence of Heart Disease"}
+fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.68, 0.99), prop={'weight':'bold'})
+# plt.savefig('first_four_together_continuous_hist.png')
 
 fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(28,8))
 fig.subplots_adjust(hspace=0.5)
