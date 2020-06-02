@@ -19,7 +19,9 @@ import itertools
 import inflect
 from more_itertools import unique_everseen
 import matplotlib.pyplot as plt
+import matplotlib
 import seaborn as sns
+import pickle
 
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
@@ -832,28 +834,6 @@ handles, legends = ax.get_legend_handles_labels()
 legends_spelled_out_dict = {0 : "Presence of Heart Disease", 1: "No Presence of Heart Disease"}
 fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.68, 0.99), prop={'weight':'bold'})
 # plt.savefig('first_four_together_continuous_hist.png')
-
-fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(28,8))
-fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features')
-for ax, continuous in zip(axes.flatten(), continuous_variables[4:8]):
-    for num_value in hungarian.num.unique():
-        ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
-        ax.set(title=continuous)
-handles, legends = ax.get_legend_handles_labels()
-fig.legend(handles, legends, loc='upper left')
-plt.savefig('second_four_together_continuous_hist.png')
-
-fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(28,8))
-fig.subplots_adjust(hspace=0.5)
-fig.suptitle('Distributions of Continuous Features')
-for ax, continuous in zip(axes.flatten(), continuous_variables[8:]):
-    for num_value in hungarian.num.unique():
-        ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
-        ax.set(title=continuous)
-handles, legends = ax.get_legend_handles_labels()
-fig.legend(handles, legends, loc='upper left')
-plt.savefig('second_four_together_continuous_hist.png')
 
 ### Check normality of continuous variables
 for continuous in continuous_variables:
@@ -1874,6 +1854,24 @@ top_model_results.to_pickle('top_model_results.pkl')
 # Save all_model_results to csv
 all_model_results.to_pickle('all_model_results.pkl')
 
+######################################################################
+### Load in top_model_results and all_model_results if not defined ###
+######################################################################
+# Check if DataFrame is already loaded in - if not, load from pickle file
+try:
+    top_model_results
+except NameError:
+    with open('top_model_results.pkl', 'rb') as top_model_results_pkl:
+        top_model_results = pickle.load(top_model_results_pkl)
+
+# Check if DataFrame is already loaded in - if not, load from pickle file
+try:
+    all_model_results
+except NameError:
+    with open('all_model_results.pkl', 'rb') as all_model_results_pkl:
+        all_model_results = pickle.load(all_model_results_pkl)
+
+
 # Re-assign index of top_model_results
 top_model_results.index = list(itertools.chain.from_iterable(itertools.repeat(range(1,8), 5)))
 
@@ -1897,7 +1895,7 @@ for value in list(unique_everseen(top_model_results.model_type)):
        top_model_from_each_algorithm = top_model_from_each_algorithm.append(other=top_model_results.loc[(top_model_results.model_type == value) &
         (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())])
 
-# Build ROC Curvs for all models which give prediction probabilities
+# Build ROC Curves for all models which give prediction probabilities
 for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
     # ROC Curve plot
     plt.figure(figsize=(13,7.5))
@@ -1921,7 +1919,7 @@ for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.co
     print(value)
     for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
         print(pred_one_col)
-        for cut_off in np.arange(0,1.01,step=0.01):
+        for cut_off in np.arange(0,1.01,step=0.001):
             print(cut_off)
             print("-" * 80)
             cf = confusion_matrix(y_true=y, y_pred=np.where(all_model_results[pred_one_col] > cut_off, 1, 0))
@@ -1982,6 +1980,108 @@ model_search_all["total_wrong"] = model_search_all.false_positives + model_searc
 # Sort DataFrame
 model_search_all = model_search_all.sort_values(by=['total_correct','f1_score'], ascending=[False, False])
 print(model_search_all)
+
+# Dict of model names and their spelled out verions
+model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifer', 'knn': 'k-Nearest Neighbors',
+                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifer'}
+
+# Spell out all model names - return list of lists
+column_all = []
+for index, value in enumerate(model_search_all['cols']):
+    one_column = []
+    for cols in model_search_all['cols'].iloc[index]:
+        if cols.split("_")[0] in model_names_spelled_out.keys():
+            cols_split = cols.split("_")
+            cols_split[0] = model_names_spelled_out[cols_split[0]]
+            cols_split = "_".join(cols_split)
+            cols_split = cols_split.replace("pred_one", "").replace("_", " ").title().strip()
+            one_column.extend([cols_split])
+    column_all.append(one_column)
+# Convert each list to a string and add as columns
+model_search_all['columns'] = [', '.join(map(str, l)) for l in column_all]
+
+# Create table for display
+model_search_all[['columns', 'f1_score', 'recall', 'precision', 'total_correct', 'total_wrong']].rename(columns={'columns': 'Model(s)',
+                                                            'f1_score': 'F1 Score',
+                                                            'recall': 'Recall', 'precision': 'Precision',
+                                                            'total_correct': 'Total Correct',
+                                                            'total_wrong': 'Total Incorrect'}).to_csv("final_models_table.csv", index=False)
+
+# Create confusion matrix for best model
+conf_matrix = [model_search_all.loc[model_search_all.cols==('svc_four',)][["true_negatives",
+                                                                           "false_positives"]].values[0].tolist(),
+               model_search_all.loc[model_search_all.cols==('svc_four',)][["false_negatives",
+                                                                           "true_positives"]].values[0].tolist()]
+group_names = ['Correctly Predicted To\nNot Have Heart Disease\n', 'Incorrectly Predicted To\nHave Heart Disease\n',
+               'Incorrectly Predicted To\nNot Have Heart Disease\n', 'Correctly Predicted To\nHave Heart Disease\n']
+group_counts = conf_matrix[0] + conf_matrix[1]
+labels = [f"{v1}\n{v2}" for v1, v2 in zip(group_names, group_counts)]
+labels = np.asarray(labels).reshape(2,2)
+tick_labels = ['No Presence of Heart Disease', 'Presence of Heart Disease']
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2,9.99]
+fig, axes = plt.subplots(nrows=1, ncols=1)
+fig.subplots_adjust(left=0.21, right=0.81, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
+sns.heatmap(conf_matrix, annot=labels, annot_kws={"size": 24, "weight": "bold"}, fmt='', xticklabels=tick_labels,
+            yticklabels=tick_labels, cbar=False, cmap=['#b2abd2', '#e66101'],
+            center=model_search_all.loc[model_search_all.cols==('svc_four',)][["false_positives", "false_negatives"]].values.max())
+plt.xticks(weight="bold", size=16)
+plt.yticks(rotation=90, va='center', weight="bold", size=16)
+plt.ylabel('True Value of Patient', weight="bold", size=20, labelpad=30)
+plt.xlabel('Predicted Value of Patient', weight="bold", size=20, labelpad=30)
+plt.title('Prediction Results for Support Vector Machine Classifier Model #4', pad = 15, fontdict={"weight": "bold", "size": 26})
+plt.show()
+
+
+# Bar chart of confusion matrix results
+bar_chart = model_search_all.loc[model_search_all.cols==('svc_four',)][["true_negatives", "false_positives",
+                                                                        "false_negatives", "true_positives"]]
+
+# Rename column names accordingly
+# for col in bar_chart.columns:
+#     bar_chart = bar_chart.rename(columns={col: col.replace("_", " ").title()})
+bar_chart = bar_chart.rename(columns={'true_negatives': 'Correctly Predicted To\nNot Have Heart Disease',
+                          'false_positives': 'Incorrectly Predicted To\nHave Heart Disease',
+                          'false_negatives': 'Incorrectly Predicted To\nNot Have Heart Disease',
+                          'true_positives': 'Correctly Predicted To\nHave Heart Disease'})
+
+# Unpivot DataFrame from wide to long format
+bar_chart = pd.melt(bar_chart).sort_values(by='value', ascending=False)
+
+# Rename columns of long format DataFrame accordingly
+bar_chart = bar_chart.rename(columns={'variable': 'Patient Outcomes'})
+
+# Define hue and label
+bar_chart['hue_label'] = list(np.where(bar_chart.value >
+                      model_search_all.loc[model_search_all.cols==('svc_four',)][["false_positives",
+                                            "false_negatives"]].values.max(), 'Correctly Predicted', 'Incorrectly Predicted'))
+# Set colors
+colors = {"Correctly Predicted": "#e66101", "Incorrectly Predicted": "#b2abd2"}
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2,9.99]
+# Histograms for all continuous variable against num
+fig, axes = plt.subplots(nrows=1, ncols=1)
+fig.subplots_adjust(left=0.19, right=0.83, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
+sns_bar_plot = sns.barplot(x=bar_chart['Patient Outcomes'], y=bar_chart.value,
+          hue=bar_chart['hue_label'], palette=colors, dodge=False)
+# Set edge color to black for bars
+for patch in sns_bar_plot.patches:
+    patch.set_edgecolor('black')
+plt.xticks(weight="bold", size=16)
+plt.yticks(weight="bold", size=16)
+plt.xlabel('Patient Outcomes', weight="bold", size=18, labelpad=20)
+plt.ylabel('')
+plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 24})
+plt.legend(title="Legend", prop={'weight':'bold', 'size': 15})
+plt.text(x=1.05, y=140, s = "Overall Accuracy: " + "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
+        ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
+                                     +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])),
+         fontdict={"weight": "bold", "size": 22}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
+plt.show()
+
+
+
+
 
 
 
