@@ -831,7 +831,7 @@ for ax, continuous in zip(axes.flatten(), continuous_variables):
         ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
         ax.set_title(continuous_variables_spelled_out_dict[continuous], fontdict ={'fontweight': 'bold', 'fontsize': 10})
 handles, legends = ax.get_legend_handles_labels()
-legends_spelled_out_dict = {0 : "Presence of Heart Disease", 1: "No Presence of Heart Disease"}
+legends_spelled_out_dict = {0: "No Presence of Heart Disease", 1: "Presence of Heart Disease"}
 fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.68, 0.99), prop={'weight':'bold'})
 # plt.savefig('first_four_together_continuous_hist.png')
 
@@ -1944,7 +1944,7 @@ all_cut_offs = all_cut_offs.groupby(["model"]).apply(lambda x: (x.sort_values(["
 all_cut_offs["model_type"] = all_cut_offs["model"].apply(lambda x: x.split("_")[0])
 
 # Get top model from each algorithm
-all_cut_offs =  all_cut_offs.groupby(["model_type"]).apply(lambda x: (x.sort_values(["total_correct",
+all_cut_offs = all_cut_offs.groupby(["model_type"]).apply(lambda x: (x.sort_values(["total_correct",
                                             "f1_score"], ascending = [False, False])).head(1)).reset_index(drop=True)
 
 all_cut_offs_results = pd.DataFrame()
