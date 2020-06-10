@@ -19,7 +19,7 @@ import itertools
 import inflect
 from more_itertools import unique_everseen
 import matplotlib.pyplot as plt
-import matplotlib
+import matplotlib.patches as mpatches
 import seaborn as sns
 import pickle
 
@@ -780,45 +780,9 @@ ax.set_xticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdic
                    rotation_mode="anchor")
 ax.set_yticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':10})
 ax.set_title("Heatmap of Continuous Predictor Features", fontdict ={'fontweight': 'bold', 'fontsize': 22})
-# f.tight_layout()
-# Correlations > 0.6
-print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr()>0.6])
-# Correlations < 0.6
-print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr()<-0.6])
 
-### Do histograms for all continuous variable splitting num (put same variable on same line)
-# fig, axes = plt.subplots(nrows=5, ncols=3, figsize=(28,8))
-# fig.subplots_adjust(hspace=0.5)
-# fig.suptitle('Distributions of Continuous Features')
-#
-# for i, continuous in zip(range(len(axes)), continuous_variables):
-#     axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
-#     axes[i][0].set(title=continuous + "_0")
-#     axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
-#     axes[i][1].set(title=continuous + "_1")
-# plt.savefig('first_four_continuous_hist.png')
-#
-# fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(28,8))
-# fig.subplots_adjust(hspace=0.5)
-# fig.suptitle('Distributions of Continuous Features')
-#
-# for i, continuous in zip(range(len(axes)), continuous_variables[4:8]):
-#     axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
-#     axes[i][0].set(title=continuous + "_0")
-#     axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
-#     axes[i][1].set(title=continuous + "_1")
-# plt.savefig('next_four_continuous_hist.png')
-#
-# fig, axes = plt.subplots(nrows=5, ncols=2, figsize=(28,8))
-# fig.subplots_adjust(hspace=0.5)
-# fig.suptitle('Distributions of Continuous Features')
-#
-# for i, continuous in zip(range(len(axes)), continuous_variables[8:13]):
-#     axes[i][0].hist(hungarian.loc[hungarian.num == 0, continuous])
-#     axes[i][0].set(title=continuous + "_0")
-#     axes[i][1].hist(hungarian.loc[hungarian.num == 1, continuous])
-#     axes[i][1].set(title=continuous + "_1")
-# plt.savefig('last_five_continuous_hist.png')
+# Correlations > 0.6 and < -0.6
+print(hungarian[continuous_variables].corr()[(hungarian[continuous_variables].corr()>0.6) | (hungarian[continuous_variables].corr()<-0.6)])
 
 # Set figsize to size of second monitor
 plt.rcParams['figure.figsize'] = [19.2,9.99]
@@ -925,7 +889,7 @@ continuous_variables.extend([x for x in list(hungarian) if 'boxcox' in x])
 # Add iteraction variables to continuous_variables list
 continuous_variables.extend([x for x in list(hungarian) if 'div_by' in x])
 
-# Correlations > 0.6
+# Correlations > 0.6 #####################################################################################################################################
 print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr() > 0.6])
 # Correlations > 0.6 and < 1.0, drop all null columns
 hungarian[continuous_variables].corr()[(hungarian[continuous_variables].corr() > 0.6) &
@@ -1895,22 +1859,35 @@ for value in list(unique_everseen(top_model_results.model_type)):
        top_model_from_each_algorithm = top_model_from_each_algorithm.append(other=top_model_results.loc[(top_model_results.model_type == value) &
         (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())])
 
-# Build ROC Curves for all models which give prediction probabilities
-for value in list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x])):
+# Dict of model names and their spelled out verions
+model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifer', 'knn': 'K-Nearest Neighbors',
+                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifer'}
+
+# Build ROC Curves for all models which give prediction probabilities (i.e. all but SVC)
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2,9.99]
+# Histograms for all continuous variable against num
+fig, axes = plt.subplots(nrows=2, ncols=2)
+fig.subplots_adjust(left=0.10, right=0.90, top=0.90, bottom=0.10, hspace=0.35, wspace=0.20)
+fig.suptitle('ROC (Receiver Operating Characteristic) Curves', fontweight= 'bold', fontsize= 22)
+for ax, value in zip(axes.flatten(), list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x]))):
     # ROC Curve plot
-    plt.figure(figsize=(13,7.5))
+    # plt.figure(figsize=(13,7.5))
     # Draw ROC Curves for all logit models on one plot
     for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
         fpr, tpr, thresholds = roc_curve(y, all_model_results[pred_one_col])
-        plt.plot(fpr, tpr, label=pred_one_col.split("_")[1])
-    plt.plot([0, 1], [0, 1],'r--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title(f'Receiver operating characteristic for {value} models')
-    plt.legend(loc="lower right")
-    plt.savefig("roc_"+value+".png")
+        ax.plot(fpr, tpr, label=pred_one_col.split("_")[1])
+        ax.plot([0, 1], [0, 1],'r--')
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel('False Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
+        ax.set_ylabel('True Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
+        ax.set_title(f'{model_names_spelled_out[value]} Models', fontdict={'fontweight': 'bold', 'fontsize': 24})
+handles, legends = ax.get_legend_handles_labels()
+legends = ['Model ' + legend.title() for legend in legends]
+fig.legend(handles, legends, loc='upper left', bbox_to_anchor=(0.90, 0.85), prop={'weight':'bold'})
+    #plt.legend(loc="lower right")
+    #plt.savefig("roc_"+value+".png")
 
 all_cut_offs = []
 # Go through various cut-offs for each model run that returns predicted probabilities
@@ -1980,10 +1957,6 @@ model_search_all["total_wrong"] = model_search_all.false_positives + model_searc
 # Sort DataFrame
 model_search_all = model_search_all.sort_values(by=['total_correct','f1_score'], ascending=[False, False])
 print(model_search_all)
-
-# Dict of model names and their spelled out verions
-model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifer', 'knn': 'k-Nearest Neighbors',
-                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifer'}
 
 # Spell out all model names - return list of lists
 column_all = []
@@ -2059,7 +2032,6 @@ bar_chart['hue_label'] = list(np.where(bar_chart.value >
 colors = {"Correctly Predicted": "#e66101", "Incorrectly Predicted": "#b2abd2"}
 # Set figsize to size of second monitor
 plt.rcParams['figure.figsize'] = [19.2,9.99]
-# Histograms for all continuous variable against num
 fig, axes = plt.subplots(nrows=1, ncols=1)
 fig.subplots_adjust(left=0.19, right=0.83, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
 sns_bar_plot = sns.barplot(x=bar_chart['Patient Outcomes'], y=bar_chart.value,
@@ -2080,6 +2052,106 @@ plt.text(x=1.05, y=140, s = "Overall Accuracy: " + "{:.1%}".format(model_search_
 plt.show()
 
 
+
+
+# Build stacked bar chart
+# Re-create beginning bar_chart of confusion matrix results
+bar_chart = model_search_all.loc[model_search_all.cols==('svc_four',)][["true_negatives", "false_positives",
+                                                                        "false_negatives", "true_positives"]]
+
+# Stacked bar chart of correctly predicted and incorrectly predicted
+stacked_bar_chart = pd.DataFrame(columns=['Correctly Predicted', 'Incorrectly Predicted'])
+# Obtain totals of correctly predicted and incorrectly predicted patients
+stacked_bar_chart["Correctly Predicted"] = bar_chart.filter(regex='true').sum(axis=1)
+stacked_bar_chart["Incorrectly Predicted"] = bar_chart.filter(regex='false').sum(axis=1)
+
+# Unpivot DataFrame from wide to long format
+stacked_bar_chart = pd.melt(stacked_bar_chart).sort_values(by='value', ascending=False)
+
+# # Obtain minimums of correctly predicted and incorrectly predicted patients
+stacked_bar_chart["value_two"] = [bar_chart.filter(regex='true').min(axis=1).values[0],
+                                        bar_chart.filter(regex='false').min(axis=1).values[0]]
+
+# Rename columns of long format DataFrame accordingly
+stacked_bar_chart = stacked_bar_chart.rename(columns={'variable': 'Patient Outcomes', 'value': 'total',
+                                                      'value_two': 'minimum'})
+
+# Define hue and label
+stacked_bar_chart['hue_label'] = list(np.where(stacked_bar_chart.total >
+                      model_search_all.loc[model_search_all.cols==('svc_four',)][["false_positives",
+                                            "false_negatives"]].values.sum(), 'Correctly Predicted', 'Incorrectly Predicted'))
+# Set colors
+colors = {"Correctly Predicted": "#e66101", "Incorrectly Predicted": "#b2abd2"}
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2,9.99]
+fig, axes = plt.subplots(nrows=1, ncols=1)
+fig.subplots_adjust(left=0.19, right=0.83, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
+sns_stacked_bar_plot = sns.barplot(x=stacked_bar_chart['Patient Outcomes'], y=stacked_bar_chart.total,
+          hue=stacked_bar_chart['hue_label'], palette=colors, dodge=False)
+sns_stacked_bar_plot = sns.barplot(x=stacked_bar_chart['Patient Outcomes'], y=stacked_bar_chart.minimum,
+          hue=None, palette=colors, dodge=False)
+for p in sns_stacked_bar_plot.patches:
+    print(p._height)
+    if p._height in stacked_bar_chart.total.values:
+        sns_stacked_bar_plot.annotate(int(p._height -
+                                      stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0]), (p.get_x() + p.get_width() / 2., (p._height -
+                                      stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0])/2 +
+                                      stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0]),
+                                      ha='center', va='center', weight='bold', fontsize=18)
+        # Add totals above bars
+        sns_stacked_bar_plot.annotate(int(p._height), (p.get_x() + p.get_width() / 2., p.get_height()), ha='center',
+                       va='center', xytext=(0, 10), textcoords='offset points', weight='bold', fontsize=20)
+    elif p._height in stacked_bar_chart.minimum.values:
+        print(p._height, p._height/2)
+        sns_stacked_bar_plot.annotate(int(p._height), (p.get_x() + p.get_width() / 2., p._height/2),
+                                      ha='center', va='center', weight='bold', fontsize=18)
+# Set edge color to black for bars
+for patch in sns_stacked_bar_plot.patches:
+    patch.set_edgecolor('black')
+plt.xticks(weight="bold", size=16)
+# plt.yticks(weight="bold", size=16)
+plt.yticks([])
+plt.xlabel('Patient Outcomes', weight="bold", size=18, labelpad=20)
+plt.ylabel('')
+plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 24},
+          pad=10.0)
+plt.legend(title="Legend", prop={'weight':'bold', 'size': 15})
+# Add 10 onto y to account for pad
+plt.text(x=0.7, y=(stacked_bar_chart.total.max() - stacked_bar_chart.total.min())/2 + stacked_bar_chart.total.min()+10,
+         s = "Overall Accuracy: " + "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
+        ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
+                                     +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])),
+         fontdict={"weight": "bold", "size": 22}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
+plt.show()
+
+
+
+
+
+
+
+
+# Create heart
+plt.figure()
+x = np.linspace(-2, 2, 1500)
+y1 = np.lib.scimath.sqrt(1-(abs(x)-1)**2)
+y2 = -3 * np.lib.scimath.sqrt(1-(abs(x)/2)**0.5)
+plt.fill_between(x, y1, where = x>0, color=colors['Incorrectly Predicted'])
+plt.fill_between(x, y1, where = x<=0, color=colors['Correctly Predicted'])
+plt.fill_between(x, y2, color=colors['Correctly Predicted'])
+plt.xlim([-2.5, 3.7])
+correctly_predicted_patch = mpatches.Patch(color=colors['Correctly Predicted'],
+                           label="".join([key for key, value in colors.items() if value == colors['Correctly Predicted']]))
+incorrectly_predicted_patch = mpatches.Patch(color=colors['Incorrectly Predicted'],
+                           label="".join([key for key, value in colors.items() if value == colors['Incorrectly Predicted']]))
+plt.legend(title="Patient Outcomes", handles=[correctly_predicted_patch, incorrectly_predicted_patch],
+           prop={'weight':'bold', 'size': 15}, title_fontsize=18)
+# plt.text(0, -1.2, "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
+#         ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
+#         +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])), fontsize=50, fontweight='bold',
+#            color='black', horizontalalignment='center')
+plt.axis('off')
+plt.show()
 
 
 
