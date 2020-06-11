@@ -92,10 +92,9 @@ print(hungarian.id.value_counts()[hungarian.id.value_counts()!=1])
 # Fix id 1132 (two different patients are both assigned to this id) - give second patient next id number (id max + 1)
 hungarian.loc[139,'id'] = hungarian.id.max() + 1
 
-# Determine number of missing values for each patient (-9 is the missing attribute value)
 # Drop patients with "significant" number of missing values in record (use 10%, can adjust accordingly)
 ### Also do analysis with keeping all patients regardless of number of missing values ###
-# Determine missing value percentage per patient
+# Determine missing value percentage per patient (-9 is the missing attribute value)
 missing_value_perc_per_patient = (hungarian == -9).sum(axis=1)[(hungarian == -9).sum(axis=1) > 0]\
                                      .sort_values(ascending=False)/len([x for x in hungarian.columns if x != 'id'])
 
