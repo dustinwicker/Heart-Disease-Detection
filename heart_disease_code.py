@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
 import pickle
-
+import yaml
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
@@ -33,7 +33,9 @@ pd.set_option('display.max_rows', 200)
 
 # Change current working directory to main directory
 def main_directory():
-    os.chdir(os.path.expanduser('~') + '/PycharmProjects/heart_disease')
+    # Load in .yml file to retrieve user information for appropriate user
+    info = yaml.load(open("info.yml"), Loader=yaml.FullLoader)
+    os.chdir(os.getcwd() + info['heart_disease_directory'])
 main_directory()
 
 # Open Hungarian data set
