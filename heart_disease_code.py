@@ -1,28 +1,29 @@
-import pandas as pd
+# Import libraries and modules
 import os
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+import yaml
+import pickle
+import numpy as np
+import pandas as pd
+import datetime as dt
 from math import sqrt
 from scipy import stats
-import datetime as dt
-import numpy as np
-from sklearn.linear_model import LogisticRegression
+import statsmodels.api as sm
+import inflect
+import itertools
+from more_itertools import unique_everseen
 from sklearn.decomposition import PCA
-from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split, GridSearchCV, ShuffleSplit
-from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 from sklearn.feature_selection import RFE
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.metrics import confusion_matrix, roc_curve
+from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split, GridSearchCV, ShuffleSplit
 from sklearn.exceptions import ConvergenceWarning
-import statsmodels.api as sm
-import itertools
-import inflect
-from more_itertools import unique_everseen
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
-import pickle
-import yaml
 
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
@@ -31,9 +32,12 @@ pd.set_option('display.max_colwidth', -1)
 # Increase number of rows printed out in console
 pd.set_option('display.max_rows', 200)
 
+# Set aesthetic parameters of seaborn plots
+sns.set()
+
 # Change current working directory to main directory
 def main_directory():
-    # Load in .yml file to retrieve user information for appropriate user
+    # Load in .yml file to retrieve location of heart disease directory
     info = yaml.load(open("info.yml"), Loader=yaml.FullLoader)
     os.chdir(os.getcwd() + info['heart_disease_directory'])
 main_directory()
@@ -53,7 +57,7 @@ file = [value.replace(",\n", "") for value in file]
 file = list(filter(None, file))
 
 # Convert list to lists of list
-attributes_per_patient = 76
+attributes_per_patient = 76 # len(file)/number of patients
 i = 0
 new_file = []
 while i < len(file):
@@ -84,18 +88,15 @@ hungarian = hungarian.drop(columns=cols_to_drop)
 # Convert all columns to numeric
 hungarian = hungarian.apply(pd.to_numeric)
 
-# Method to scale continuous and binary variables (z-score standardization)
-scaler = StandardScaler()
-
-## Fix possible patient id issues
+### Fix possible patient id issues
 # Find ids that are not unique to patients
 print(hungarian.id.value_counts()[hungarian.id.value_counts()!=1])
 
 # Fix id 1132 (two different patients are both assigned to this id) - give second patient next id number (id max + 1)
-hungarian.loc[139,'id'] = hungarian.id.max() + 1
+hungarian.loc[hungarian.loc[hungarian.id==1132].index[-1], 'id'] = hungarian.id.max() + 1
 
-# Drop patients with "significant" number of missing values in record (use 10%, can adjust accordingly)
 ### Also do analysis with keeping all patients regardless of number of missing values ###
+# Drop patients with "significant" number of missing values (use 10%, can adjust accordingly)
 # Determine missing value percentage per patient (-9 is the missing attribute value)
 missing_value_perc_per_patient = (hungarian == -9).sum(axis=1)[(hungarian == -9).sum(axis=1) > 0]\
                                      .sort_values(ascending=False)/len([x for x in hungarian.columns if x != 'id'])
@@ -103,13 +104,14 @@ missing_value_perc_per_patient = (hungarian == -9).sum(axis=1)[(hungarian == -9)
 # Remove patients with > 10% missing values
 hungarian = hungarian.drop(missing_value_perc_per_patient[missing_value_perc_per_patient>0.10].index.values)
 
-# Imputing missing values (marked as -9 per data dictionary)
+### Imputing missing values (marked as -9 per data dictionary)
 cols_with_missing_values = [(col, hungarian[col].value_counts()[-9]) for col in list(hungarian) if -9 in hungarian[col].unique()]
 # Sort tuples by number of missing values
 cols_with_missing_values.sort(key=lambda x: x[1])
 
-### Use KNN to impute missing values ###
-
+# Use K-Nearest Neighbors (KNN) to impute missing values
+# Method to scale continuous and binary variables (z-score standardization)
+scaler = StandardScaler()
 variables_not_to_use_for_imputation = ['ekgday', 'cmo', 'cyr', 'ekgyr', 'cday', 'ekgmo', 'num']
 
 # Impute htn
@@ -692,19 +694,14 @@ hungarian.loc[hungarian[impute_variable]==-9, impute_variable] = chol_prediction
 ################ Keep as is with different levels #####################################
 hungarian.loc[hungarian.num > 0, "num"] = 1
 
-### Data visualizations and statistical analysis ###
-
+### Exploratory data analysis ###
+# Data visualizations and statistical analysis #
 # Determine 'strong' alpha value based on sample size (AA 501, 3 - More Complex ANOVA Regression)
 sample_size_one, strong_alpha_value_one = 100, 0.001
 sample_size_two, strong_alpha_value_two = 1000, 0.0003
 slope = (strong_alpha_value_two - strong_alpha_value_one)/(sample_size_two - sample_size_one)
 strong_alpha_value = slope * (hungarian.shape[0] - sample_size_one) + strong_alpha_value_one
 print(f"The alpha value for use in hypothesis tests is {strong_alpha_value}.")
-
-### Exploratory data analysis ###
-
-# Set aesthetic parameters
-sns.set()
 
 # List of continuous variables
 continuous_variables = ['age', 'trestbps', 'chol', 'thaldur', 'met', 'thalach', 'thalrest', 'tpeakbps', 'tpeakbpd',
@@ -787,10 +784,10 @@ print(hungarian[continuous_variables].corr()[(hungarian[continuous_variables].co
 
 # Set figsize to size of second monitor
 plt.rcParams['figure.figsize'] = [19.2,9.99]
-# Histograms for all continuous variable against num
+# Histograms for continuous variable against num
 fig, axes = plt.subplots(nrows=5, ncols=3)
 fig.subplots_adjust(left=0.17, right=0.83, top=0.90, bottom=0.10, hspace=0.7, wspace = 0.25)
-fig.suptitle('Distributions of Continuous Features by Target', fontweight= 'bold', fontsize= 22)
+fig.suptitle('Distributions of Continuous Features by Target', fontweight='bold', fontsize= 22)
 for ax, continuous in zip(axes.flatten(), continuous_variables):
     for num_value in hungarian.num.unique():
         ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
@@ -798,7 +795,6 @@ for ax, continuous in zip(axes.flatten(), continuous_variables):
 handles, legends = ax.get_legend_handles_labels()
 legends_spelled_out_dict = {0: "No Presence of Heart Disease", 1: "Presence of Heart Disease"}
 fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.68, 0.99), prop={'weight':'bold'})
-# plt.savefig('first_four_together_continuous_hist.png')
 
 ### Check normality of continuous variables
 for continuous in continuous_variables:
@@ -820,26 +816,54 @@ for continuous in continuous_variables:
         print("Do not reject the null hypothesis")
     print('\n')
 
-# Compare original distribution with boxcox'd distribution for specific variables
-plt.figure()
-sns.distplot(hungarian.chol)
-plt.figure()
-sns.distplot(stats.boxcox(x=hungarian.chol)[0]).set_title('boxcox')
+# Boxcox necessary variables that reject the null hypothesis from normaltest in scipy.stats
+hungarian['trestbps_boxcox'] = stats.boxcox(x=hungarian.trestbps)[0]
+hungarian['chol_boxcox'] = stats.boxcox(x=hungarian.chol)[0]
+hungarian['thalrest_boxcox'] = stats.boxcox(x=hungarian.thalrest)[0]
+
+# Add boxcox'd variables to continuous_variables_spelled_out_dict
+for boxcox_var in filter(lambda x: '_boxcox' in x, hungarian.columns):
+    continuous_variables_spelled_out_dict[boxcox_var] = continuous_variables_spelled_out_dict[
+                                                            boxcox_var.split("_")[0]] + " Box-Cox"
+
+# Compare original distribution with boxcox'd distribution for chol
+# Set figsize to size of second monitor so all possible xtick labels are drawn on plots
+plt.rcParams['figure.figsize'] = [19.2,6]
+fig, axes = plt.subplots(nrows=1, ncols=2, sharey=True)
+fig.suptitle('Distributions with Kernel Density Estimation (KDE) Overlaid ', fontweight='bold', fontsize=24)
+for ax, variable in zip(axes.flatten(), ['chol', 'chol_boxcox']):
+    print(ax, variable)
+    ax.hist(hungarian[variable])
+    ax2 = hungarian[variable].plot.kde(ax=ax, secondary_y=True)
+    ax2.grid(False)
+    ax2.set_yticks([])
+    ax2.set_title(continuous_variables_spelled_out_dict[variable], fontdict={'fontweight': 'bold', 'fontsize': 22})
+    ax.text(0.78, 0.75, f"Kurtosis value: {'{:.3}'.format(stats.kurtosis(a=hungarian[variable], fisher=True))}\n"
+                      f"Sknewness value: {'{:.3}'.format(stats.skew(a=hungarian[variable]))}",
+            horizontalalignment='center', verticalalignment='center', transform=ax.transAxes,
+            bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3), weight='bold', fontsize=14)
+    ax.set_ylabel('Density', fontdict={'fontweight': 'bold', 'fontsize': 18})
+# Expand figure to desired size first before running below code (this makes xtick labels appear and then can therefore be bolded)
+for i in range(len(axes)):
+    axes[i].set_xticklabels(axes[i].get_xticklabels(), fontweight='bold')
+
 
 # Plot original and boxcox'd distributions to each other and against num
-print(len([x for x in list(hungarian) if 'boxcox' in x]))
-# Create list of variables to plot for inspection
-variables_for_inspection = ['chol', 'chol_boxcox', 'thalrest', 'thalrest_boxcox', 'trestbps', 'trestbps_boxcox']
-fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(28,8))
+# Create list of boxcox'd variables and their originals
+variables_for_inspection = list(itertools.chain.from_iterable([[x, x.split("_")[0]] for x in list(hungarian) if 'boxcox' in x]))
+# Sort list in ascending order
+variables_for_inspection.sort(reverse=False)
+fig, axes = plt.subplots(nrows=len([x for x in variables_for_inspection if 'boxcox' in x]), ncols=2, figsize=(28,8))
 fig.subplots_adjust(hspace=0.5)
-fig.suptitle("Distributions of Continuous Features and their BoxCox'd Features")
+fig.suptitle("Distributions of Continuous Features and their Box-Cox'd Versions", fontweight='bold', fontsize=20)
 for ax, variable in zip(axes.flatten(), variables_for_inspection):
     for num_value in hungarian.num.unique():
         ax.hist(hungarian.loc[hungarian.num == num_value, variable], alpha=0.7, label=num_value)
-        ax.set(title=variable)
+        ax.set_title(continuous_variables_spelled_out_dict[variable], fontdict={'fontweight': 'bold', 'fontsize': 24})
 handles, legends = ax.get_legend_handles_labels()
-fig.legend(handles, legends, loc='upper left')
-plt.savefig('continuous_with_boxcox_hist.png')
+legends_spelled_out_dict = {0: "No Presence of Heart Disease", 1: "Presence of Heart Disease"}
+fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.77, 1.0),
+           prop={'weight': 'bold', 'size': 14})
 
 # Pearson chi-square tests
 chi_square_analysis_list = []
@@ -854,12 +878,228 @@ chi_square_analysis_df = pd.DataFrame(chi_square_analysis_list, columns=['variab
 # Determine categorical variables that reject null
 chi_square_analysis_df.loc[chi_square_analysis_df.p_value <= strong_alpha_value]
 
+# Crosstab of age and num
+pd.crosstab(index=hungarian.age,columns=hungarian.num, normalize=True)
+
+# Distribution plot of age of all patients
+plt.figure()
+sns.distplot(hungarian['age'], kde=True, fit=stats.norm, rug=False,
+             kde_kws={"label": "Kernel Density Esimation (KDE)"},
+             fit_kws={"label": "Normal Distribution"}).set_title("Age Distribution of Patients")
+plt.legend(loc='best')
+plt.show()
+
+# Statistical understanding of age of all patients
+print(f"Mean +/- std of {hungarian['age'].name}: {round(hungarian['age'].describe()['mean'],2)} +/"
+      f" {round(hungarian['age'].describe()['std'],2)}. This means 68% of my patients lie between the ages of"
+      f" {round(hungarian['age'].describe()['mean'] - hungarian['age'].describe()['std'],2)} and"
+      f" {round(hungarian['age'].describe()['mean'] + hungarian['age'].describe()['std'],2)}.")
+standard_devations = 2
+print(f"Mean +/- {standard_devations} std of {hungarian['age'].name}: {round(hungarian['age'].describe()['mean'],2)} +/"
+      f" {round(hungarian['age'].describe()['std'] * standard_devations,2)}. This means 95% of my patients lie between the ages of"
+      f" {round(hungarian['age'].describe()['mean'] - (standard_devations * hungarian['age'].describe()['std']),2)} and"
+      f" {round(hungarian['age'].describe()['mean'] + (standard_devations * hungarian['age'].describe()['std']),2)}.")
+standard_devations = 3
+print(f"Mean +/- {standard_devations} std of {hungarian['age'].name}: {round(hungarian['age'].describe()['mean'],2)} +/"
+      f" {round(hungarian['age'].describe()['std'] * standard_devations,2)}. This means 99.7% of my patients lie between the ages of"
+      f" {round(hungarian['age'].describe()['mean'] - (standard_devations * hungarian['age'].describe()['std']),2)} and"
+      f" {round(hungarian['age'].describe()['mean'] + (standard_devations * hungarian['age'].describe()['std']),2)}.")
+print(f"Mode of {hungarian['age'].name}: {hungarian['age'].mode()[0]}\nMedian of {hungarian['age'].name}: {hungarian['age'].median()}")
+
+# Distribution plot of age of patients broken down by sex - female
+plt.figure()
+sns.distplot(hungarian.loc[hungarian['sex']==0, 'age'], kde=True, fit=stats.norm,
+             kde_kws={"label": "Kernel Density Esimation (KDE)"},
+             fit_kws={"label": "Normal Distribution"}).set_title('Female Age Distribution')
+plt.legend(loc='best')
+plt.show()
+
+# Women age information
+print(f"Mean +/- std of {hungarian.loc[hungarian['sex']==0, 'age'].name} for women: "
+      f"{round(hungarian.loc[hungarian['sex']==0, 'age'].describe()['mean'],2)} +/ "
+      f"{round(hungarian.loc[hungarian['sex']==0, 'age'].describe()['std'],2)}")
+
+print(f"Mode of {hungarian.loc[hungarian['sex']==0, 'age'].name} for women: "
+      f"{hungarian.loc[hungarian['sex']==0, 'age'].mode()[0]}\nMedian of "
+      f"{hungarian.loc[hungarian['sex']==0, 'age'].name} for women: + "
+      f"{hungarian.loc[hungarian['sex']==0, 'age'].median()}")
+print('\n')
+
+# Distribution plot of age of patients broken down by sex - male
+plt.figure()
+sns.distplot(hungarian.loc[hungarian['sex']==1, 'age'],kde=True, fit=stats.norm,
+             kde_kws={"label": "Kernel Density Esimation (KDE)"},
+             fit_kws={"label": "Normal Distribution"}).set_title('Male Age Distribution')
+plt.legend(loc='best')
+plt.show()
+
+# Men age information
+print(f"Mean +/- std of {hungarian.loc[hungarian['sex']==1, 'age'].name} for men: "
+      f"{round(hungarian.loc[hungarian['sex']==1, 'age'].describe()['mean'],2)} +/ "
+      f"{round(hungarian.loc[hungarian['sex']==1, 'age'].describe()['std'],2)}")
+
+print(f"Mode of {hungarian.loc[hungarian['sex']==1, 'age'].name} for men: "
+      f"{hungarian.loc[hungarian['sex']==1, 'age'].mode()[0]}\nMedian of "
+      f"{hungarian.loc[hungarian['sex']==1, 'age'].name} for men: + "
+      f"{hungarian.loc[hungarian['sex']==1, 'age'].median()}")
+
+## Sex
+# Get counts of sex
+print(hungarian.sex.value_counts())
+print(f'The hungarian dataset consists of {hungarian.sex.value_counts()[0]} females and'
+      f' {hungarian.sex.value_counts()[1]} males.')
+
+# Bar graph of sex by num
+plt.figure()
+sex_dict = {0: "female", 1: "male"}
+sns.countplot(x="sex", hue="num", data=hungarian).set(title='Heart Disease Indicator by Sex', xticklabels=sex_dict.values())
+plt.show()
+
+# Crosstab of sex by num
+print(pd.crosstab(index=hungarian.sex, columns=hungarian.num))
+
+# Crosstab of sex by num - all values normalized
+# Of all patients in dataset, 32% were males that had heart disease. 4% were females that had heart disease.
+print(pd.crosstab(index=hungarian.sex, columns=hungarian.num, normalize='all'))
+
+# Crosstab of sex by num - rows normalized
+# 15% of females had heart disease. 44% of males had heart disease.
+print(pd.crosstab(index=hungarian.sex, columns=hungarian.num, normalize='index'))
+
+# Crosstab of sex by num - columns normalized
+# 89% of the patients with heart disease were males. 11% were females.
+print(pd.crosstab(index=hungarian.sex, columns=hungarian.num, normalize='columns'))
+
+# Contingency table of sex by num
+contingency = pd.crosstab(index=hungarian.sex, columns=hungarian.num)
+print(contingency)
+# Pearson chi-square test
+chi, p, dof, expected = stats.chi2_contingency(contingency)
+
+if p <= strong_alpha_value:
+    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
+          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
+          f"disease. The probability of a heart disease diagnosis is not the same for male and female patients.")
+else:
+    print(f"Fail to reject the null of no association between sex and diagnosis of heart disease. The probability of a "
+          f"heart disease diagnosis is the same regardless of a patient's sex.")
+
+# Compute odds ratio and risk ratio
+table = sm.stats.Table2x2(contingency)
+print(table.summary())
+print(f"The odds ratio is {table.oddsratio}. This means males are {round(table.oddsratio,2)} times more likely to be "
+      f"diagnosed with heart disease than females.")
+
+## Painloc
+# Bar graph of painloc by num
+plt.figure()
+painloc_dict = {0: "otherwise", 1: "substernal"}
+sns.countplot(x="painloc", hue="num", data=hungarian).set(title='Heart Disease Indicator by Pain Location', xticklabels=painloc_dict.values())
+plt.show()
+
+# Contingency table of painloc by num
+contingency = pd.crosstab(index=hungarian.painloc, columns=hungarian.num)
+print(contingency)
+# Pearson chi-square test
+chi, p, dof, expected = stats.chi2_contingency(contingency)
+print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
+      f" {p}, respectfully.")
+if p <= strong_alpha_value:
+    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
+          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
+          f"disease. The probability of a heart disease diagnosis is not the same based on chest pain location.")
+else:
+    print(f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
+          f"The probability of a heart disease diagnosis is the same regardless of chest pain location.")
 
 
-# Boxcox necessary variables
-hungarian['trestbps_boxcox'] = stats.boxcox(x=hungarian.trestbps)[0]
-hungarian['chol_boxcox'] = stats.boxcox(x=hungarian.chol)[0]
-hungarian['thalrest_boxcox'] = stats.boxcox(x=hungarian.thalrest)[0]
+# Compute odds ratio and risk ratio
+table = sm.stats.Table2x2(contingency)
+print(table.summary())
+print(f"The odds ratio is {table.oddsratio}.")
+
+## Painexer
+# Bar graph of painexer by num
+plt.figure()
+painexer_dict = {0: "otherwise", 1: "provoked by exertion"}
+sns.countplot(x="painexer", hue="num",
+              data=hungarian).set(title='Heart Disease Indicator by Pain Exertion', xticklabels=painexer_dict.values())
+plt.show()
+
+# Contingency table of painexer by num
+contingency = pd.crosstab(index=hungarian.painexer, columns=hungarian.num)
+print(contingency)
+# Pearson chi-square test
+chi, p, dof, expected = stats.chi2_contingency(contingency)
+print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
+      f" {p}, respectfully. The expected values are\n{expected}.")
+if p <= strong_alpha_value:
+    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
+          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
+          f"disease. The probability of a heart disease diagnosis is not the same based on how chest pain is provoked.")
+else:
+    print(f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
+          f"The probability of a heart disease diagnosis is the same regardless of how chest pain is provoked.")
+
+# Compute odds ratio and risk ratio
+table = sm.stats.Table2x2(contingency)
+print(table.summary())
+print(f"The odds ratio is {table.oddsratio}. This means patients with their chest pain provoked by exertion are "
+      f"{round(table.oddsratio,2)} times more likely to have a diagnosis of heart disease than those patients with "
+      f"their chest pain provoked otherwise.")
+
+## Relrest
+# Bar graph of relrest by num
+plt.figure()
+relrest_dict = {0: "otherwise", 1: "relieved after rest"}
+sns.countplot(x="relrest", hue="num", data=hungarian).set(title='Heart Disease Indicator by Pain Relief', xticklabels=relrest_dict.values())
+plt.show()
+
+# Contingency table of relrest by num
+contingency = pd.crosstab(index=hungarian.relrest, columns=hungarian.num)
+print(contingency)
+# Pearson chi-square test
+chi, p, dof, expected = stats.chi2_contingency(contingency)
+print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
+      f" {p}, respectfully. The expected values are\n{expected}.")
+if p <= strong_alpha_value:
+    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
+          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
+          f"disease. The probability of a heart disease diagnosis is not the same for pain relieved after rest and "
+          f"otherwise.")
+else:
+    print(f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
+          f"The probability of a heart disease diagnosis is the same regardless of when the pain is relieved.")
+
+# Compute odds ratio and risk ratio
+table = sm.stats.Table2x2(contingency)
+print(table.summary())
+print(f"The odds ratio is {table.oddsratio}. This means patients with their chest pain relieved after rest are "
+      f"{round(table.oddsratio,2)} times more likely to have a diagnosis of heart disease than those patients with "
+      f"their chest pain relieved otherwise.")
+
+## Cp
+# Bar graph of cp by num
+plt.figure()
+cp_dict = {1: "typical angina", 2: "atypical angina", 3: "non-anginal pain", 4: "asymptomatic"}
+sns.countplot(x="cp", hue="num", data=hungarian).set(title='Heart Disease Indicator by Chest Pain Type', xticklabels=cp_dict.values())
+plt.show()
+
+# Contingency table of cp by cum
+contingency = pd.crosstab(index=hungarian.cp, columns=hungarian.num)
+print(contingency)
+# Pearson chi-square test
+chi, p, dof, expected = stats.chi2_contingency(contingency)
+print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
+      f" {p}, respectfully.")
+if p <= strong_alpha_value:
+    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
+          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
+          f"disease. The probability of a heart disease diagnosis is not the same depending on chest pain type.")
+else:
+    print(
+        f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
+        f"The probability of a heart disease diagnosis is the same regardless of chest pain type.")
 
 # Feature engineering
 hungarian["thalach_div_by_thalrest"] = hungarian["thalach"]/hungarian["thalrest"]
@@ -890,13 +1130,14 @@ continuous_variables.extend([x for x in list(hungarian) if 'boxcox' in x])
 # Add iteraction variables to continuous_variables list
 continuous_variables.extend([x for x in list(hungarian) if 'div_by' in x])
 
-# Correlations > 0.6 #####################################################################################################################################
-print(hungarian[continuous_variables].corr()[hungarian[continuous_variables].corr() > 0.6])
-# Correlations > 0.6 and < 1.0, drop all null columns
-hungarian[continuous_variables].corr()[(hungarian[continuous_variables].corr() > 0.6) &
-                                       (hungarian[continuous_variables].corr() < 1.0)].dropna(axis=1, how='all')
+# Correlations > 0.6 and < 1.0 and <-0.6 and >-1.0, drop all null columns
+hungarian[continuous_variables].corr()[((hungarian[continuous_variables].corr() > 0.6) &
+                                              (hungarian[continuous_variables].corr() < 1.0)) |
+                                             ((hungarian[continuous_variables].corr()<-0.6) &
+                                              (hungarian[continuous_variables].corr()>-1.0))].dropna(axis=1, how='all')
 
-############## Plot results form each model run on ROC Curve to better observe best cut-off value ######################
+
+### Model Building
 # Create empty DataFrame to append all model results to
 all_model_results = pd.DataFrame()
 # Create DataFrame to append top model results to
@@ -1070,11 +1311,11 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
             sm_logistic = sm.Logit(y_train, x_train[logit_variable_list]).fit()
             # All p-values are significant
             if all(p_values < strong_alpha_value for p_values in sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values):
-                print("-----------")
+                print("-*"*60)
                 print((sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist()))
-                print("-----------")
-                print("-----------")
+                print("-*"*60)
+                print("-*"*60)
                 model_search_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
                                         (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
                                         (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
@@ -1086,9 +1327,9 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
             # P-value(s) of particular variable(s) is not significant
             elif any(p_values > strong_alpha_value for p_values in sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values):
-                print('*********')
+                print('*'*60)
                 print(logit_variable_list[-1])
-                print('*********')
+                print('*'*60)
                 if logit_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x)])) if len(x) == 1]):
                     cat_var_level_check = sm_logistic.summary2().tables[1]._getitem_column("P>|z|")[sm_logistic.summary2().
                         tables[1]._getitem_column("P>|z|").index.isin([var for var in list(x) if
@@ -1106,11 +1347,11 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
                     # Else False - remove all levels of categorical variable
                     else:
-                        print("!!!!!!!!!!!!!!!!!!!!!")
+                        print("-"*60)
                         print(sm_logistic.summary2())
                         insignificant_variables_list.extend(cat_var_level_check.index)
                 else:
-                    print('&&&&&&&&&&&&&')
+                    print('='*60)
                     print(sm_logistic.summary2())
                     print(logit_variable_list[-1])
                     cont_var_check = sm_logistic.summary2().tables[1]._getitem_column("P>|z|")[sm_logistic.summary2().
@@ -1127,7 +1368,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                         (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
                     else:
-                        print('^^^^^^^^^^^^^')
+                        print('^'*60)
                         print(logit_variable_list[-1])
                         insignificant_variables_list.append(logit_variable_list[-1])
     # Create DataFrame of logisitic regression results
@@ -1143,7 +1384,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                 conf_matr = confusion_matrix(y_true=y, y_pred=logit_predict)
                 model_results_logit.append([solve, col[0], conf_matr[0][0], conf_matr[0][1], conf_matr[1][0], conf_matr[1][1]])
             except ConvergenceWarning:
-                print("#############")
+                print("#"*60)
     # Create DataFrame of results
     model_results_logit = pd.DataFrame(model_results_logit, columns = ['solver', 'variables_used', 'true_negatives', 'false_positives',
                                                  'false_negatives', 'true_positives'])
@@ -1172,107 +1413,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 
 # Fill in model_type columns
 top_model_results['model_type'] = top_model_results['model_type'].fillna(value='logit')
-
-# # Create all possible feature combinations for regression
-# variable_combinations = []
-# for length in range(1, len(list(x)[:-15] + list(set([var.split("_")[0] for var in list(x)[-15:]])))+1):
-#     for subset in itertools.combinations(list(x)[:-15] + list(set([var.split("_")[0] for var in list(x)[-15:]])), length):
-#         variable_combinations.append(list(subset))
-
-# # Create dict of original and dummified categorical variables
-# orig_dummied_dict = {}
-# for original in categorical_variables[:-7] + [categorical_variables[-6]] + [categorical_variables[-4]]:
-#     orig_dummied_dict[original] = [dummied for dummied in list(x) if original in dummied]
-#
-# ### Update variable_combinations to have correct form of categorical variable (i.e. dummified version)
-# ### Build models for all variable combinatons
-# # Empty list to append results to
-# model_search_list_logit = []
-# for var_com in variable_combinations:
-#     print(var_com)
-#     print('--------')
-#     if any([i in orig_dummied_dict for i in var_com]):
-#         for i, v in orig_dummied_dict.items():
-#             if i in var_com:
-#                 var_com.remove(i)
-#                 var_com.extend(v)
-#         # Train/test split
-#         x_train, x_test, y_train, y_test = train_test_split(x[var_com], y, test_size=0.33, random_state=43)
-#         print(var_com)
-#         print("*********")
-#         # Build logistic regression
-#         sm_logistic = sm.Logit(y_train, x_train[var_com]).fit()
-#         model_search_list_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
-#                                         (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
-#                                         (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
-#                                         (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
-#                                         (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
-#                                         (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
-#                                         (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
-#                                         (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
-#                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
-#     else:
-#         # Train/test split
-#         x_train, x_test, y_train, y_test = train_test_split(x[var_com], y, test_size=0.33, random_state=43)
-#         print(var_com)
-#         print("==========")
-#         # Build logistic regression
-#         sm_logistic = sm.Logit(y_train, x_train[var_com]).fit()
-#         model_search_list_logit.append([(sm_logistic.summary2().tables[0][0][6], sm_logistic.summary2().tables[0][1][6]),
-#                                         (sm_logistic.summary2().tables[0][2][0], sm_logistic.summary2().tables[0][3][0]),
-#                                         (sm_logistic.summary2().tables[0][2][1], sm_logistic.summary2().tables[0][3][1]),
-#                                         (sm_logistic.summary2().tables[0][2][2], sm_logistic.summary2().tables[0][3][2]),
-#                                         (sm_logistic.summary2().tables[0][2][3], sm_logistic.summary2().tables[0][3][3]),
-#                                         (sm_logistic.summary2().tables[0][2][4], sm_logistic.summary2().tables[0][3][4]),
-#                                         (sm_logistic.summary2().tables[0][2][5], sm_logistic.summary2().tables[0][3][5]),
-#                                         (sm_logistic.summary2().tables[1]._getitem_column("P>|z|").index.tolist(),
-#                                          sm_logistic.summary2().tables[1]._getitem_column("P>|z|").values.tolist())])
-
-
-# logit_roc_auc = roc_auc_score(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
-#                 y_train).predict(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']]))
-# fpr, tpr, thresholds = roc_curve(y_test, logistic_regression_model.fit(x_train[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']],
-#                 y_train).predict_proba(x_test[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']])[:,1])
-# # Create DataFrame of results
-# roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
-# # Rename columns
-# roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
-#
-# # ROC Curve plot
-# plt.figure()
-# plt.plot(fpr, tpr, label='Logistic Regression (area = %0.2f)' % logit_roc_auc)
-# plt.plot([0, 1], [0, 1],'r--')
-# plt.xlim([0.0, 1.0])
-# plt.ylim([0.0, 1.05])
-# plt.xlabel('False Positive Rate')
-# plt.ylabel('True Positive Rate')
-# plt.title('Receiver operating characteristic')
-# plt.legend(loc="lower right")
-#
-#
-# # Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
-# i = np.arange(len(tpr))
-# roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
-# roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
-# list(roc_t['threshold'])
-#
-# # Want high sensitivity (want to miss as few 1 patients as possible and okay to miss on a few extra 0 patients)
-# # The "missed" 0's could be potential 1's in the future if conditions for them worsen
-# # Optimal cut-off value from this -> fpr = 0.229508  tpr = 0.861111  threshold = 0.402949
-# # DataFrame of roc curve values
-# roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
-# # Rename columns
-# roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
-#
-# logistic_regression_predict = cross_val_predict(logistic_regression_model,
-#                               x[['exang_1', 'cp_2', 'cp_3', 'cp_4', 'oldpeak']], y, cv=5, method='predict_proba')[:,1].tolist()
-# logistic_regression_predict = [1 if x >= list(roc_t['threshold'])[0] else 0 for x in logistic_regression_predict]
-#
-# # Create DataFrame of model predictions from all models
-# model_results = pd.DataFrame()
-# # Logistic Regression prediction
-# model_results['logistic_regression_prediction'] = logistic_regression_predict
-
 
 
 ### Random forest classifer ###
@@ -2222,268 +2362,3 @@ model_search_all['precision'] = model_search_all.true_positives/(model_search_al
 model_search_all['f1_score'] = 2 * (model_search_all.precision * model_search_all.recall) / (model_search_all.precision + model_search_all.recall)
 # Sort DataFrame
 model_search_all = model_search_all.sort_values(by=['f1_score'], ascending=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Sex
-# Get counts of sex
-print(hungarian.sex.value_counts())
-print(f'The hungarian dataset consists of {hungarian.sex.value_counts()[0]} females and'
-      f' {hungarian.sex.value_counts()[1]} males.')
-
-# Bar graph of sex by num
-plt.figure()
-sex_dict = {0: "female", 1: "male"}
-sns.countplot(x="sex", hue="num", data=hungarian).set(title='Heart Disease Indicator by Sex', xticklabels=sex_dict.values())
-plt.show()
-
-# Crosstab of sex by num
-print(pd.crosstab(index=hungarian.sex, columns=hungarian.num))
-
-# Crosstab of sex by num - all values normalized
-# Of all patients in dataset, 32% were males that had heart disease. 4% were females that had heart disease.
-print(pd.crosstab(index=hungarian.sex, columns=hungarian.num, normalize='all'))
-
-# Crosstab of sex by num - rows normalized
-# 15% of females had heart disease. 44% of males had heart disease.
-print(pd.crosstab(index=hungarian.sex, columns=hungarian.num, normalize='index'))
-
-# Crosstab of sex by num - columns normalized
-# 89% of the patients with heart disease were males. 11% were females.
-print(pd.crosstab(index=hungarian.sex, columns=hungarian.num, normalize='columns'))
-
-# Contingency table of sex by num
-contingency = pd.crosstab(index=hungarian.sex, columns=hungarian.num)
-print(contingency)
-
-
-
-if p <= strong_alpha_value:
-    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
-          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
-          f"disease. The probability of a heart disease diagnosis is not the same for male and female patients.")
-else:
-    print(f"Fail to reject the null of no association between sex and diagnosis of heart disease. The probability of a "
-          f"heart disease diagnosis is the same regardless of a patient's sex.")
-
-# Compute odds ratio and risk ratio
-table = sm.stats.Table2x2(contingency)
-print(table.summary())
-print(f"The odds ratio is {table.oddsratio}. This means males are {round(table.oddsratio,2)} times more likely to be "
-      f"diagnosed with heart disease than females.")
-
-## Painloc
-# Bar graph of painloc by num
-plt.figure()
-painloc_dict = {0: "otherwise", 1: "substernal"}
-sns.countplot(x="painloc", hue="num", data=hungarian).set(title='Heart Disease Indicator by Pain Location', xticklabels=painloc_dict.values())
-plt.show()
-
-# Contingency table of painloc by num
-contingency = pd.crosstab(index=hungarian.painloc, columns=hungarian.num)
-print(contingency)
-# Pearson chi-square test
-chi, p, dof, expected = stats.chi2_contingency(contingency)
-print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
-      f" {p}, respectfully.")
-if p <= strong_alpha_value:
-    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
-          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
-          f"disease. The probability of a heart disease diagnosis is not the same based on chest pain location.")
-else:
-    print(f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
-          f"The probability of a heart disease diagnosis is the same regardless of chest pain location.")
-
-# Fisher's Exact chi-square
-
-
-
-# Compute odds ratio and risk ratio
-table = sm.stats.Table2x2(contingency)
-print(table.summary())
-print(f"The odds ratio is {table.oddsratio}.")
-
-## Painexer
-# Bar graph of painexer by num
-plt.figure()
-painexer_dict = {0: "otherwise", 1: "provoked by exertion"}
-sns.countplot(x="painexer", hue="num", data=hungarian).set(title='Heart Disease Indicator by Pain Exertion', xticklabels=painexer_dict.values())
-plt.show()
-
-# Contingency table of painexer by num
-contingency = pd.crosstab(index=hungarian.painexer, columns=hungarian.num)
-print(contingency)
-# Pearson chi-square test
-chi, p, dof, expected = stats.chi2_contingency(contingency)
-print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
-      f" {p}, respectfully. The expected values are\n{expected}.")
-if p <= strong_alpha_value:
-    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
-          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
-          f"disease. The probability of a heart disease diagnosis is not the same based on how chest pain is provoked.")
-else:
-    print(f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
-          f"The probability of a heart disease diagnosis is the same regardless of how chest pain is provoked.")
-
-# Compute odds ratio and risk ratio
-table = sm.stats.Table2x2(contingency)
-print(table.summary())
-print(f"The odds ratio is {table.oddsratio}. This means patients with their chest pain provoked by exertion are "
-      f"{round(table.oddsratio,2)} times more likely to have a diagnosis of heart disease than those patients with "
-      f"their chest pain provoked otherwise.")
-
-
-## Relrest
-# Bar graph of relrest by num
-plt.figure()
-relrest_dict = {0: "otherwise", 1: "relieved after rest"}
-sns.countplot(x="relrest", hue="num", data=hungarian).set(title='Heart Disease Indicator by Pain Relief', xticklabels=relrest_dict.values())
-plt.show()
-
-# Contingency table of relrest by num
-contingency = pd.crosstab(index=hungarian.relrest, columns=hungarian.num)
-print(contingency)
-# Pearson chi-square test
-chi, p, dof, expected = stats.chi2_contingency(contingency)
-print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
-      f" {p}, respectfully. The expected values are\n{expected}.")
-if p <= strong_alpha_value:
-    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
-          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
-          f"disease. The probability of a heart disease diagnosis is not the same for pain relieved after rest and "
-          f"otherwise.")
-else:
-    print(f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
-          f"The probability of a heart disease diagnosis is the same regardless of when the pain is relieved.")
-
-# Compute odds ratio and risk ratio
-table = sm.stats.Table2x2(contingency)
-print(table.summary())
-print(f"The odds ratio is {table.oddsratio}. This means patients with their chest pain relieved after rest are "
-      f"{round(table.oddsratio,2)} times more likely to have a diagnosis of heart disease than those patients with "
-      f"their chest pain relieved otherwise.")
-
-## Cp
-# Bar graph of cp by num
-plt.figure()
-cp_dict = {1: "typical angina", 2: "atypical angina", 3: "non-anginal pain", 4: "asymptomatic"}
-sns.countplot(x="cp", hue="num", data=hungarian).set(title='Heart Disease Indicator by Chest Pain Type', xticklabels=cp_dict.values())
-plt.show()
-
-# Contingency table of cp by cum
-contingency = pd.crosstab(index=hungarian.cp, columns=hungarian.num)
-print(contingency)
-# Pearson chi-square test
-chi, p, dof, expected = stats.chi2_contingency(contingency)
-print(f"The chi-square value for {contingency.index.name} and {contingency.columns.name} is {chi}, and the p-value is"
-      f" {p}, respectfully.")
-if p <= strong_alpha_value:
-    print(f"Reject the null hypothesis of no association between {contingency.index.name} and diagnosis of heart "
-          f"disease and conclude there is an association between {contingency.index.name} and diagnosis of heart "
-          f"disease. The probability of a heart disease diagnosis is not the same depending on chest pain type.")
-else:
-    print(
-        f"Fail to reject the null of no association between {contingency.index.name} and diagnosis of heart disease. "
-        f"The probability of a heart disease diagnosis is the same regardless of chest pain type.")
-
-# Fisher's Exact chi-square
-
-# Compute odds ratio and risk ratio
-### Figure out local odds ratios
-table = sm.stats.Table(contingency)
-print(table.local_oddsratios)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Distribution plot of age of all patients
-plt.figure(), sns.distplot(hungarian['age'], kde=True, fit=stats.norm, rug=True).set_title("Age Distribution of Patients")
-plt.show()
-
-# Statistical undersatanding of age of all patients
-print(f"Mean +/- std of {hungarian['age'].name}: {round(hungarian['age'].describe()['mean'],2)} +/"
-      f" {round(hungarian['age'].describe()['std'],2)}. This means 68% of my patients lie between the ages of"
-      f" {round(hungarian['age'].describe()['mean'] - hungarian['age'].describe()['std'],2)} and"
-      f" {round(hungarian['age'].describe()['mean'] + hungarian['age'].describe()['std'],2)}.")
-standard_devations = 2
-print(f"Mean +/- {standard_devations} std of {hungarian['age'].name}: {round(hungarian['age'].describe()['mean'],2)} +/"
-      f" {round(hungarian['age'].describe()['std'] * standard_devations,2)}. This means 95% of my patients lie between the ages of"
-      f" {round(hungarian['age'].describe()['mean'] - (standard_devations * hungarian['age'].describe()['std']),2)} and"
-      f" {round(hungarian['age'].describe()['mean'] + (standard_devations * hungarian['age'].describe()['std']),2)}.")
-standard_devations = 3
-print(f"Mean +/- {standard_devations} std of {hungarian['age'].name}: {round(hungarian['age'].describe()['mean'],2)} +/"
-      f" {round(hungarian['age'].describe()['std'] * standard_devations,2)}. This means 99.7% of my patients lie between the ages of"
-      f" {round(hungarian['age'].describe()['mean'] - (standard_devations * hungarian['age'].describe()['std']),2)} and"
-      f" {round(hungarian['age'].describe()['mean'] + (standard_devations * hungarian['age'].describe()['std']),2)}.")
-print(f"Mode of {hungarian['age'].name}: {hungarian['age'].mode()[0]}\nMedian of {hungarian['age'].name}: {hungarian['age'].median()}")
-
-# Distribution plot of age of patients broken down by sex - female
-plt.figure(), sns.distplot(hungarian.loc[hungarian['sex']==0, 'age'], label='Female Age Distribution',kde=True, fit=stats.norm)
-plt.legend()
-plt.show()
-
-# Distribution plot of age of patients broken down by sex - male
-plt.figure(), sns.distplot(hungarian.loc[hungarian['sex']==1, 'age'], label='Male Age Distribution',kde=True, fit=stats.norm)
-plt.legend()
-plt.show()
-
-# Women age information
-print(f"Mean +/- std of {hungarian.loc[hungarian['sex']==0, 'age'].name} for women: "
-      f"{round(hungarian.loc[hungarian['sex']==0, 'age'].describe()['mean'],2)} +/ "
-      f"{round(hungarian.loc[hungarian['sex']==0, 'age'].describe()['std'],2)}")
-
-print(f"Mode of {hungarian.loc[hungarian['sex']==0, 'age'].name} for women: "
-      f"{hungarian.loc[hungarian['sex']==0, 'age'].mode()[0]}\nMedian of "
-      f"{hungarian.loc[hungarian['sex']==0, 'age'].name} for women: + "
-      f"{hungarian.loc[hungarian['sex']==0, 'age'].median()}")
-print('\n')
-# Men age information
-print(f"Mean +/- std of {hungarian.loc[hungarian['sex']==1, 'age'].name} for men: "
-      f"{round(hungarian.loc[hungarian['sex']==1, 'age'].describe()['mean'],2)} +/ "
-      f"{round(hungarian.loc[hungarian['sex']==1, 'age'].describe()['std'],2)}")
-
-print(f"Mode of {hungarian.loc[hungarian['sex']==1, 'age'].name} for men: "
-      f"{hungarian.loc[hungarian['sex']==1, 'age'].mode()[0]}\nMedian of "
-      f"{hungarian.loc[hungarian['sex']==1, 'age'].name} for men: + "
-      f"{hungarian.loc[hungarian['sex']==1, 'age'].median()}")
-
-
-sns.scatterplot(x='age', y='num', data=hungarian)
-pd.crosstab(index=hungarian.age,columns=hungarian.num)
