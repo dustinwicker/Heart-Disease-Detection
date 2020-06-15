@@ -1146,8 +1146,10 @@ top_model_results = pd.DataFrame(columns=['model_type', 'solver', 'best_model_pa
                                           'recall', 'precision', 'f1_score', 'variables_not_used', 'variables_used',
                                           'model_params_grid_search'])
 
-# Create copy of hungarian for regression modeling
+# Create copy of hungarian for modeling
 model = hungarian.copy()
+# Save target variable for use with pickle files
+model['num'].to_pickle("hungarian_target_variable.pkl")
 
 # Drop columns
 variables_to_drop_for_modeling_one = ['id', 'ekgyr', 'ekgmo', 'ekgday', 'cyr', 'cmo', 'cday', 'lvx3', 'lvx4', 'lvf',
@@ -1451,12 +1453,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
         print("--------------------------------")
         # try:
         grid_search.fit(x, y)
-        # except ValueError:
-        #     param_grid = {'n_estimators': np.arange(10, 111, step=5), 'criterion': ['gini', 'entropy'],
-        #                   'max_features': np.arange(2, len(list(x)), step=3)}
-        #     # Define grid search CV parameters
-        #     grid_search = GridSearchCV(random_forest_model, param_grid, cv=cv)
-        #     grid_search.fit(x, y)
         print(f'Best parameters for current grid seach: {grid_search.best_params_}')
         print(f'Best score for current grid seach: {grid_search.best_score_}')
         # Define parameters of Random Forest Classifier from grid search
@@ -1536,8 +1532,6 @@ top_model_results['model_type'] = top_model_results['model_type'].fillna(value='
 
 
 ### Support-vector machine classifer
-# Standard scale continuous variables
-# scaler = StandardScaler()
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
@@ -1555,7 +1549,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 
     # Create copy of x for standard scaling
     x_std = x.copy()
-    print(list(x_std)[list(x_std).index('sex_0')-1])
+    # print(list(x_std)[list(x_std).index('sex_0')-1])
     x_std.loc[:, :list(x_std)[list(x_std).index('sex_0')-1]] = scaler.fit_transform(x_std.loc[:, :list(x_std)[list(x_std).index('sex_0')-1]])
 
     # Define parameters of SVC
@@ -1567,7 +1561,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     param_grid = {'kernel': ['rbf', 'sigmoid', 'linear'], 'C': np.arange(0.10, 2.41, step=0.05), 'gamma': ['scale', 'auto']}
     cv = ShuffleSplit(n_splits=5, test_size=0.3)
     # Define grid search CV parameters
-    grid_search = GridSearchCV(svc_model, param_grid, cv=cv) # , scoring='recall'
+    grid_search = GridSearchCV(svc_model, param_grid, cv=cv)
 
     # Loop through features based on recursive feature elimination evaluation - top to bottom
     model_search_svc = []
@@ -1578,7 +1572,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
             # Add related one-hot encoded variables if variable is categorical
             if svc_variable_list[-1].split('_')[-1] in sorted([x for x in list(set([x.split('_')[-1] for x in list(x_std)])) if len(x) == 1]):
                 svc_variable_list.extend([var for var in list(x_std) if svc_variable_list[-1].split('_')[0] in var and var != svc_variable_list[-1]])
-            ###################################################################
             print(svc_variable_list)
             grid_search.fit(x_std[svc_variable_list], y)
             print(f'Best parameters for current grid seach: {grid_search.best_params_}')
@@ -1630,8 +1623,6 @@ top_model_results['model_type'] = top_model_results['model_type'].fillna(value='
 
 
 ### K-Nearest Neighbors
-# Standard scale continuous variables
-# scaler = StandardScaler()
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
@@ -1771,8 +1762,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
         gbm_baseline = GradientBoostingClassifier()
         # Cross-validate
         cross_val_score_gbm = cross_val_score(gbm_baseline, x, y, cv=cv)
-        # Baseline cv score mean
-        # print(f"Baseline gbm cross_val_score mean: {cross_val_score_gbm.mean()}")
 
         # Begin parameter tuning for GBM
         # Set initial values (will be tuned later)
@@ -1791,7 +1780,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                              max_features= max_features, subsample= subsample)
         grid_search = GridSearchCV(gbm_one, param_grid, cv=cv) # , scoring='recall'
         grid_search.fit(x, y)
-        # print(grid_search.best_params_, grid_search.best_score_)
         # Obain n_estimators from grid search
         n_estimators_best_param_grid_search_one = grid_search.best_params_['n_estimators']
 
@@ -1802,7 +1790,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                              subsample= subsample, n_estimators=n_estimators_best_param_grid_search_one)
         grid_search = GridSearchCV(gbm_two, param_grid2, cv=cv) # , scoring='recall'
         grid_search.fit(x, y)
-        # print(grid_search.best_params_, grid_search.best_score_)
         # Obain max_depth and min_samples_split from grid search
         max_depth_best_param_grid_search_two = grid_search.best_params_['max_depth']
         min_samples_split_best_param_grid_search_two = grid_search.best_params_['min_samples_split']
@@ -1815,7 +1802,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                                min_samples_split= min_samples_split_best_param_grid_search_two)
         grid_search = GridSearchCV(gbm_three, param_grid3, cv=cv) # , scoring='recall'
         grid_search.fit(x, y)
-        # print(grid_search.best_params_, grid_search.best_score_)
         # Obain min_samples_leaf from grid search
         min_samples_leaf_best_param_grid_search_three = grid_search.best_params_['min_samples_leaf']
 
@@ -1828,7 +1814,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                               min_samples_leaf= min_samples_leaf_best_param_grid_search_three)
         grid_search = GridSearchCV(gbm_four, param_grid4, cv=cv) # , scoring='recall'
         grid_search.fit(x, y)
-        # print(grid_search.best_params_, grid_search.best_score_)
         # Obain max_features from grid search
         max_features_best_param_grid_search_four = grid_search.best_params_['max_features']
 
@@ -1842,7 +1827,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                               max_features=max_features_best_param_grid_search_four)
         grid_search = GridSearchCV(gbm_five, param_grid5, cv=cv) # , scoring='recall'
         grid_search.fit(x, y)
-        # print(grid_search.best_params_, grid_search.best_score_)
         # Obtain subsample from grid search
         subsample_best_param_grid_search_five = grid_search.best_params_['subsample']
 
@@ -1858,7 +1842,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
         # Append l_rate, n_ests, and cross_val_score mean
         cross_val_score_gbm_six_means = []
         for l_rate, n_ests in param_grid_list:
-            # print(l_rate, n_ests)
             gbm_six = GradientBoostingClassifier(learning_rate=l_rate, n_estimators=n_ests,
                                                  max_depth=max_depth_best_param_grid_search_two,
                                                  min_samples_split=min_samples_split_best_param_grid_search_two,
@@ -1866,8 +1849,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                                  max_features=max_features_best_param_grid_search_four,
                                                  subsample=subsample_best_param_grid_search_five)
             cross_val_score_gbm_six = cross_val_score(gbm_six, x, y, cv=cv)
-            # print(cross_val_score_gbm_six)
-            # print(cross_val_score_gbm_six.mean())
             cross_val_score_gbm_six_means.append([l_rate, n_ests, cross_val_score_gbm_six.mean()])
             # Retrieve best values for learning_rate and n_estimators based on max value of cross_val_score_gbm_six.mean()
             learning_rate_n_estimators_best_param_grid_list = list(filter(lambda x: x[2] == max(map(lambda x: x[2],
@@ -1882,7 +1863,6 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                                subsample=subsample_best_param_grid_search_five)
         gbm_predict = cross_val_predict(gbm_final, x, y, cv=5)
         conf_matr = confusion_matrix(y_true=y, y_pred=gbm_predict)
-        # print(conf_matr)
         model_search_gbm.append([gbm_final.get_params(), conf_matr[0][0], conf_matr[0][1],
                                  conf_matr[1][0], conf_matr[1][1], set(x_all).difference(x)])
         # Obtain feature importances
@@ -1954,9 +1934,9 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 # Fill in model_type columns
 top_model_results['model_type'] = top_model_results['model_type'].fillna(value='gbm')
 
-# Save top_model_results to csv
+# Serialize top_model_results
 top_model_results.to_pickle('top_model_results.pkl')
-# Save all_model_results to csv
+# Serialize all_model_results
 all_model_results.to_pickle('all_model_results.pkl')
 
 ######################################################################
@@ -1976,6 +1956,40 @@ except NameError:
     with open('all_model_results.pkl', 'rb') as all_model_results_pkl:
         all_model_results = pickle.load(all_model_results_pkl)
 
+# Check if target variable is defined as y - if not, load from pickle file
+try:
+    y
+except NameError:
+    with open('hungarian_target_variable.pkl', 'rb') as hungarian_target_variable_pkl:
+        y = pickle.load(hungarian_target_variable_pkl)
+
+# Dict of model names and their spelled out verions
+model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifer', 'knn': 'K-Nearest Neighbors',
+                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifer'}
+
+# Build ROC Curves for all models which give prediction probabilities (i.e. all but SVC)
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2, 9.99]
+# Histograms for all continuous variable against num
+fig, axes = plt.subplots(nrows=2, ncols=2)
+fig.subplots_adjust(left=0.10, right=0.90, top=0.90, bottom=0.10, hspace=0.35, wspace=0.20)
+fig.suptitle('ROC (Receiver Operating Characteristic) Curves', fontweight= 'bold', fontsize= 22)
+for ax, value in zip(axes.flatten(), list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x]))):
+    # ROC Curve plot
+    # plt.figure(figsize=(13,7.5))
+    # Draw ROC Curves for all logit models on one plot
+    for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
+        fpr, tpr, thresholds = roc_curve(y, all_model_results[pred_one_col])
+        ax.plot(fpr, tpr, label=pred_one_col.split("_")[1])
+        ax.plot([0, 1], [0, 1],'r--')
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.set_xlabel('False Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
+        ax.set_ylabel('True Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
+        ax.set_title(f'{model_names_spelled_out[value]} Models', fontdict={'fontweight': 'bold', 'fontsize': 24})
+handles, legends = ax.get_legend_handles_labels()
+legends = ['Model ' + legend.title() for legend in legends]
+fig.legend(handles, legends, loc='upper left', bbox_to_anchor=(0.90, 0.85), prop={'weight':'bold'})
 
 # Re-assign index of top_model_results
 top_model_results.index = list(itertools.chain.from_iterable(itertools.repeat(range(1,8), 5)))
@@ -1999,36 +2013,6 @@ for value in list(unique_everseen(top_model_results.model_type)):
    else:
        top_model_from_each_algorithm = top_model_from_each_algorithm.append(other=top_model_results.loc[(top_model_results.model_type == value) &
         (top_model_results.f1_score == top_model_results.loc[(top_model_results.model_type == value), 'f1_score'].max())])
-
-# Dict of model names and their spelled out verions
-model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifer', 'knn': 'K-Nearest Neighbors',
-                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifer'}
-
-# Build ROC Curves for all models which give prediction probabilities (i.e. all but SVC)
-# Set figsize to size of second monitor
-plt.rcParams['figure.figsize'] = [19.2,9.99]
-# Histograms for all continuous variable against num
-fig, axes = plt.subplots(nrows=2, ncols=2)
-fig.subplots_adjust(left=0.10, right=0.90, top=0.90, bottom=0.10, hspace=0.35, wspace=0.20)
-fig.suptitle('ROC (Receiver Operating Characteristic) Curves', fontweight= 'bold', fontsize= 22)
-for ax, value in zip(axes.flatten(), list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x]))):
-    # ROC Curve plot
-    # plt.figure(figsize=(13,7.5))
-    # Draw ROC Curves for all logit models on one plot
-    for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
-        fpr, tpr, thresholds = roc_curve(y, all_model_results[pred_one_col])
-        ax.plot(fpr, tpr, label=pred_one_col.split("_")[1])
-        ax.plot([0, 1], [0, 1],'r--')
-        ax.set_xlim([0.0, 1.0])
-        ax.set_ylim([0.0, 1.05])
-        ax.set_xlabel('False Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
-        ax.set_ylabel('True Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
-        ax.set_title(f'{model_names_spelled_out[value]} Models', fontdict={'fontweight': 'bold', 'fontsize': 24})
-handles, legends = ax.get_legend_handles_labels()
-legends = ['Model ' + legend.title() for legend in legends]
-fig.legend(handles, legends, loc='upper left', bbox_to_anchor=(0.90, 0.85), prop={'weight':'bold'})
-    #plt.legend(loc="lower right")
-    #plt.savefig("roc_"+value+".png")
 
 all_cut_offs = []
 # Go through various cut-offs for each model run that returns predicted probabilities
@@ -2078,7 +2062,7 @@ all_cut_offs_results["svc_" + inflect.engine().number_to_words(
 
 # Get combinations of length 1,3, and 5 (take mode of 3 and 5)
 model_search_all = []
-for length in [1, 3,5]:
+for length in [1, 3, 5]:
     for comb in itertools.combinations(all_cut_offs_results.columns, length):
         print(list(comb))
         print(confusion_matrix(y_true=y, y_pred=all_cut_offs_results[list(comb)].mode(axis=1)))
@@ -2130,10 +2114,10 @@ group_names = ['Correctly Predicted To\nNot Have Heart Disease\n', 'Incorrectly 
                'Incorrectly Predicted To\nNot Have Heart Disease\n', 'Correctly Predicted To\nHave Heart Disease\n']
 group_counts = conf_matrix[0] + conf_matrix[1]
 labels = [f"{v1}\n{v2}" for v1, v2 in zip(group_names, group_counts)]
-labels = np.asarray(labels).reshape(2,2)
+labels = np.asarray(labels).reshape(2, 2)
 tick_labels = ['No Presence of Heart Disease', 'Presence of Heart Disease']
 # Set figsize to size of second monitor
-plt.rcParams['figure.figsize'] = [19.2,9.99]
+plt.rcParams['figure.figsize'] = [19.2, 9.99]
 fig, axes = plt.subplots(nrows=1, ncols=1)
 fig.subplots_adjust(left=0.21, right=0.81, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
 sns.heatmap(conf_matrix, annot=labels, annot_kws={"size": 24, "weight": "bold"}, fmt='', xticklabels=tick_labels,
@@ -2146,57 +2130,8 @@ plt.xlabel('Predicted Value of Patient', weight="bold", size=20, labelpad=30)
 plt.title('Prediction Results for Support Vector Machine Classifier Model #4', pad = 15, fontdict={"weight": "bold", "size": 26})
 plt.show()
 
-
-# Bar chart of confusion matrix results
-bar_chart = model_search_all.loc[model_search_all.cols==('svc_four',)][["true_negatives", "false_positives",
-                                                                        "false_negatives", "true_positives"]]
-
-# Rename column names accordingly
-# for col in bar_chart.columns:
-#     bar_chart = bar_chart.rename(columns={col: col.replace("_", " ").title()})
-bar_chart = bar_chart.rename(columns={'true_negatives': 'Correctly Predicted To\nNot Have Heart Disease',
-                          'false_positives': 'Incorrectly Predicted To\nHave Heart Disease',
-                          'false_negatives': 'Incorrectly Predicted To\nNot Have Heart Disease',
-                          'true_positives': 'Correctly Predicted To\nHave Heart Disease'})
-
-# Unpivot DataFrame from wide to long format
-bar_chart = pd.melt(bar_chart).sort_values(by='value', ascending=False)
-
-# Rename columns of long format DataFrame accordingly
-bar_chart = bar_chart.rename(columns={'variable': 'Patient Outcomes'})
-
-# Define hue and label
-bar_chart['hue_label'] = list(np.where(bar_chart.value >
-                      model_search_all.loc[model_search_all.cols==('svc_four',)][["false_positives",
-                                            "false_negatives"]].values.max(), 'Correctly Predicted', 'Incorrectly Predicted'))
-# Set colors
-colors = {"Correctly Predicted": "#e66101", "Incorrectly Predicted": "#b2abd2"}
-# Set figsize to size of second monitor
-plt.rcParams['figure.figsize'] = [19.2,9.99]
-fig, axes = plt.subplots(nrows=1, ncols=1)
-fig.subplots_adjust(left=0.19, right=0.83, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
-sns_bar_plot = sns.barplot(x=bar_chart['Patient Outcomes'], y=bar_chart.value,
-          hue=bar_chart['hue_label'], palette=colors, dodge=False)
-# Set edge color to black for bars
-for patch in sns_bar_plot.patches:
-    patch.set_edgecolor('black')
-plt.xticks(weight="bold", size=16)
-plt.yticks(weight="bold", size=16)
-plt.xlabel('Patient Outcomes', weight="bold", size=18, labelpad=20)
-plt.ylabel('')
-plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 24})
-plt.legend(title="Legend", prop={'weight':'bold', 'size': 15})
-plt.text(x=1.05, y=140, s = "Overall Accuracy: " + "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
-        ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
-                                     +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])),
-         fontdict={"weight": "bold", "size": 22}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
-plt.show()
-
-
-
-
 # Build stacked bar chart
-# Re-create beginning bar_chart of confusion matrix results
+# Create bar_chart of confusion matrix results
 bar_chart = model_search_all.loc[model_search_all.cols==('svc_four',)][["true_negatives", "false_positives",
                                                                         "false_negatives", "true_positives"]]
 
@@ -2265,20 +2200,58 @@ plt.text(x=0.7, y=(stacked_bar_chart.total.max() - stacked_bar_chart.total.min()
          fontdict={"weight": "bold", "size": 22}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
 plt.show()
 
+# Bar chart of confusion matrix results
+bar_chart = model_search_all.loc[model_search_all.cols==('svc_four',)][["true_negatives", "false_positives",
+                                                                        "false_negatives", "true_positives"]]
 
+# Rename column names accordingly
+# for col in bar_chart.columns:
+#     bar_chart = bar_chart.rename(columns={col: col.replace("_", " ").title()})
+bar_chart = bar_chart.rename(columns={'true_negatives': 'Correctly Predicted To\nNot Have Heart Disease',
+                          'false_positives': 'Incorrectly Predicted To\nHave Heart Disease',
+                          'false_negatives': 'Incorrectly Predicted To\nNot Have Heart Disease',
+                          'true_positives': 'Correctly Predicted To\nHave Heart Disease'})
 
+# Unpivot DataFrame from wide to long format
+bar_chart = pd.melt(bar_chart).sort_values(by='value', ascending=False)
 
+# Rename columns of long format DataFrame accordingly
+bar_chart = bar_chart.rename(columns={'variable': 'Patient Outcomes'})
 
-
-
+# Define hue and label
+bar_chart['hue_label'] = list(np.where(bar_chart.value >
+                      model_search_all.loc[model_search_all.cols==('svc_four',)][["false_positives",
+                                            "false_negatives"]].values.max(), 'Correctly Predicted', 'Incorrectly Predicted'))
+# Set colors
+colors = {"Correctly Predicted": "#e66101", "Incorrectly Predicted": "#b2abd2"}
+# Set figsize to size of second monitor
+plt.rcParams['figure.figsize'] = [19.2,9.99]
+fig, axes = plt.subplots(nrows=1, ncols=1)
+fig.subplots_adjust(left=0.19, right=0.83, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
+sns_bar_plot = sns.barplot(x=bar_chart['Patient Outcomes'], y=bar_chart.value,
+          hue=bar_chart['hue_label'], palette=colors, dodge=False)
+# Set edge color to black for bars
+for patch in sns_bar_plot.patches:
+    patch.set_edgecolor('black')
+plt.xticks(weight="bold", size=16)
+plt.yticks(weight="bold", size=16)
+plt.xlabel('Patient Outcomes', weight="bold", size=18, labelpad=20)
+plt.ylabel('')
+plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 24})
+plt.legend(title="Legend", prop={'weight':'bold', 'size': 15})
+plt.text(x=1.05, y=140, s = "Overall Accuracy: " + "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
+        ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
+                                     +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])),
+         fontdict={"weight": "bold", "size": 22}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
+plt.show()
 
 # Create heart
 plt.figure()
 x = np.linspace(-2, 2, 1500)
 y1 = np.lib.scimath.sqrt(1-(abs(x)-1)**2)
 y2 = -3 * np.lib.scimath.sqrt(1-(abs(x)/2)**0.5)
-plt.fill_between(x, y1, where = x>0, color=colors['Incorrectly Predicted'])
-plt.fill_between(x, y1, where = x<=0, color=colors['Correctly Predicted'])
+plt.fill_between(x, y1, where = x>.7, color=colors['Incorrectly Predicted'])
+plt.fill_between(x, y1, where = x<=.7, color=colors['Correctly Predicted'])
 plt.fill_between(x, y2, color=colors['Correctly Predicted'])
 plt.xlim([-2.5, 3.7])
 correctly_predicted_patch = mpatches.Patch(color=colors['Correctly Predicted'],
@@ -2287,78 +2260,10 @@ incorrectly_predicted_patch = mpatches.Patch(color=colors['Incorrectly Predicted
                            label="".join([key for key, value in colors.items() if value == colors['Incorrectly Predicted']]))
 plt.legend(title="Patient Outcomes", handles=[correctly_predicted_patch, incorrectly_predicted_patch],
            prop={'weight':'bold', 'size': 15}, title_fontsize=18)
+# Add text if wanted
 # plt.text(0, -1.2, "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
 #         ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
 #         +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])), fontsize=50, fontweight='bold',
 #            color='black', horizontalalignment='center')
 plt.axis('off')
 plt.show()
-
-
-
-
-
-
-
-
-
-
-# Create DataFrame of results
-roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
-# Rename columns
-roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
-
-#
-# Determine optimal value for threshold (# tpr - (1-fpr) is zero or near to zero is the optimal cut off point)
-i = np.arange(len(tpr))
-roc = pd.DataFrame({'tf' : pd.Series(tpr-(1-fpr), index=i), 'threshold' : pd.Series(thresholds, index=i)})
-roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
-list(roc_t['threshold'])
-#
-# # Want high sensitivity (want to miss as few 1 patients as possible and okay to miss on a few extra 0 patients)
-# # The "missed" 0's could be potential 1's in the future if conditions for them worsen
-# # Optimal cut-off value from this -> fpr = 0.229508  tpr = 0.861111  threshold = 0.402949
-# # DataFrame of roc curve values
-# roc_curve_df = pd.DataFrame([fpr, tpr, thresholds]).T
-# # Rename columns
-# roc_curve_df = roc_curve_df.rename(columns={0: 'fpr', 1: 'tpr', 2: 'thresholds'})
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Get combinations of length 1,3, and 5 (take mode of 3 and 5)
-model_search_all = []
-for length in [1, 3,5]:
-    for comb in itertools.combinations(['logit', 'rfc', 'svc', 'knn', 'gbm'], length):
-        print(list(comb))
-        print(confusion_matrix(y_true=y, y_pred=all_model_results[list(comb)].mode(axis=1)))
-        conf_matr = confusion_matrix(y_true=y, y_pred=all_model_results[list(comb)].mode(axis=1))
-        model_search_all.append([comb, conf_matr[0][0], conf_matr[0][1], conf_matr[1][0], conf_matr[1][1]])
-        print('\n')
-# Create DataFrame of results
-model_search_all = pd.DataFrame(model_search_all, columns=['cols', 'true_negatives', 'false_positives',
-                                             'false_negatives', 'true_positives'])
-# Create recall, precision, and f1-score columns
-model_search_all['recall'] = model_search_all.true_positives/(model_search_all.true_positives + model_search_all.false_negatives)
-model_search_all['precision'] = model_search_all.true_positives/(model_search_all.true_positives + model_search_all.false_positives)
-model_search_all['f1_score'] = 2 * (model_search_all.precision * model_search_all.recall) / (model_search_all.precision + model_search_all.recall)
-# Sort DataFrame
-model_search_all = model_search_all.sort_values(by=['f1_score'], ascending=False)
