@@ -1,4 +1,4 @@
-# Import libraries and modules
+# Import libraries and packages
 import os
 import yaml
 import pickle
@@ -28,7 +28,7 @@ import seaborn as sns
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
 # Be able to read entire value in each column (no longer truncating values)
-pd.set_option('display.max_colwidth', -1)
+pd.set_option('display.max_colwidth', None)
 # Increase number of rows printed out in console
 pd.set_option('display.max_rows', 200)
 
@@ -57,7 +57,7 @@ file = [value.replace(",\n", "") for value in file]
 file = list(filter(None, file))
 
 # Convert list to lists of list
-attributes_per_patient = 76 # len(file)/number of patients
+attributes_per_patient = int(len(file)/294)    # len(file)/number of patients
 i = 0
 new_file = []
 while i < len(file):
@@ -748,9 +748,9 @@ hungarian['rldv5_rldv5e_pca'] = PCA(n_components=1).fit_transform(hungarian[['rl
 # Append new PCA'd variable to continuous variable list
 continuous_variables.append('rldv5_rldv5e_pca')
 
-# Dicitionary with continuous variable as key and spelled out version of variablea as value
+# Dicitionary with continuous variable as key and spelled out version of variable as value
 continuous_variables_spelled_out_dict = {'age': 'Age', 'trestbps': 'Resting Blood Pressure (On Admission)',
-                                         'chol': 'Serum Cholestoral', 'thaldur': 'Duration of Exercise Test (Minutes)',
+                                         'chol': 'Serum Cholesterol', 'thaldur': 'Duration of Exercise Test (Minutes)',
                                          'met': 'METs Achieved', 'thalach': 'Maximum Heart Rate Achieved',
                                          'thalrest': 'Resting Heart Rate',
                                          'tpeakbps': 'Peak Exercise Blood Pressure (Systolic)',
@@ -770,13 +770,14 @@ mask = np.zeros_like(continuous_variable_correlations)
 # Mark upper half and diagonal of mask as True
 mask[np.triu_indices_from(mask)] = True
 # Correlation heatmap
-f, ax = plt.subplots(figsize=(9, 6))
-f.subplots_adjust(left=0.32, right=0.89, top=0.95, bottom=0.32)
-ax = sns.heatmap(hungarian[continuous_variables].corr(), cmap='PiYG', mask=mask, linewidths=.5, linecolor="white", cbar=True)
-ax.set_xticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':10},
+f, ax = plt.subplots()
+f.subplots_adjust(left=0.31, right=1.06, top=0.96, bottom=0.43)
+ax = sns.heatmap(hungarian[continuous_variables].corr(), cmap='PiYG', mask=mask, linewidths=.5, linecolor="white",
+                 cbar=True)
+ax.set_xticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':14},
                    rotation=45, ha="right",
                    rotation_mode="anchor")
-ax.set_yticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':10})
+ax.set_yticklabels(labels=continuous_variables_spelled_out_dict.values(),fontdict ={'fontweight': 'bold', 'fontsize':14})
 ax.set_title("Heatmap of Continuous Predictor Features", fontdict ={'fontweight': 'bold', 'fontsize': 22})
 
 # Correlations > 0.6 and < -0.6
@@ -786,15 +787,15 @@ print(hungarian[continuous_variables].corr()[(hungarian[continuous_variables].co
 plt.rcParams['figure.figsize'] = [19.2,9.99]
 # Histograms for continuous variable against num
 fig, axes = plt.subplots(nrows=5, ncols=3)
-fig.subplots_adjust(left=0.17, right=0.83, top=0.90, bottom=0.10, hspace=0.7, wspace = 0.25)
+fig.subplots_adjust(left=0.03, right=.97, top=0.90, bottom=0.03, hspace=0.7, wspace=0.25)
 fig.suptitle('Distributions of Continuous Features by Target', fontweight='bold', fontsize= 22)
 for ax, continuous in zip(axes.flatten(), continuous_variables):
     for num_value in hungarian.num.unique():
         ax.hist(hungarian.loc[hungarian.num == num_value, continuous], alpha=0.7, label=num_value)
-        ax.set_title(continuous_variables_spelled_out_dict[continuous], fontdict ={'fontweight': 'bold', 'fontsize': 10})
+        ax.set_title(continuous_variables_spelled_out_dict[continuous], fontdict ={'fontweight': 'bold', 'fontsize': 15})
 handles, legends = ax.get_legend_handles_labels()
 legends_spelled_out_dict = {0: "No Presence of Heart Disease", 1: "Presence of Heart Disease"}
-fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.68, 0.99), prop={'weight':'bold'})
+fig.legend(handles, legends_spelled_out_dict.values(), loc='upper left', bbox_to_anchor=(0.70, 1), prop={'weight': 'bold'})
 
 ### Check normality of continuous variables
 for continuous in continuous_variables:
@@ -830,22 +831,24 @@ for boxcox_var in filter(lambda x: '_boxcox' in x, hungarian.columns):
 # Set figsize to size of second monitor so all possible xtick labels are drawn on plots
 plt.rcParams['figure.figsize'] = [19.2,6]
 fig, axes = plt.subplots(nrows=1, ncols=2, sharey=True)
-fig.suptitle('Distributions with Kernel Density Estimation (KDE) Overlaid ', fontweight='bold', fontsize=24)
+fig.subplots_adjust(left=0.05, right=.99, top=0.90, bottom=0.04)
+fig.suptitle('Distributions with Kernel Density Estimation (KDE) Overlaid ', fontweight='bold', fontsize=26)
 for ax, variable in zip(axes.flatten(), ['chol', 'chol_boxcox']):
     print(ax, variable)
     ax.hist(hungarian[variable])
-    ax2 = hungarian[variable].plot.kde(ax=ax, secondary_y=True)
+    ax2 = hungarian[variable].plot.kde(ax=ax, secondary_y=True, linewidth=8, alpha=0.8)
     ax2.grid(False)
     ax2.set_yticks([])
-    ax2.set_title(continuous_variables_spelled_out_dict[variable], fontdict={'fontweight': 'bold', 'fontsize': 22})
-    ax.text(0.78, 0.75, f"Kurtosis value: {'{:.3}'.format(stats.kurtosis(a=hungarian[variable], fisher=True))}\n"
-                      f"Sknewness value: {'{:.3}'.format(stats.skew(a=hungarian[variable]))}",
+    ax2.set_title(continuous_variables_spelled_out_dict[variable], fontdict={'fontweight': 'bold', 'fontsize': 24})
+    ax.text(0.78, 0.85, f"Kurtosis value: {'{:.3}'.format(stats.kurtosis(a=hungarian[variable], fisher=True))}\n"
+                      f"Skewness value: {'{:.3}'.format(stats.skew(a=hungarian[variable]))}",
             horizontalalignment='center', verticalalignment='center', transform=ax.transAxes,
-            bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3), weight='bold', fontsize=14)
-    ax.set_ylabel('Density', fontdict={'fontweight': 'bold', 'fontsize': 18})
+            bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=4), weight='bold', fontsize=17)
+    ax.set_ylabel('Density', fontdict={'fontweight': 'bold', 'fontsize': 22})
 # Expand figure to desired size first before running below code (this makes xtick labels appear and then can therefore be bolded)
 for i in range(len(axes)):
-    axes[i].set_xticklabels(axes[i].get_xticklabels(), fontweight='bold')
+    axes[i].set_xticklabels(axes[i].get_xticklabels(), fontweight='bold', fontsize=18)
+axes[0].set_yticklabels(axes[0].get_yticklabels(), fontweight='bold', fontsize=18)
 
 
 # Plot original and boxcox'd distributions to each other and against num
@@ -870,6 +873,7 @@ chi_square_analysis_list = []
 for categorical in categorical_variables:
     chi, p, dof, expected = stats.chi2_contingency(pd.crosstab(index=hungarian[categorical], columns=hungarian[target_variable]))
     print(f"The chi-square value for {categorical} and {target_variable} is {chi}, and the p-value is" f" {p}, respectfully.")
+    print('\n')
     chi_square_analysis_list.append([categorical, target_variable, chi, p])
 
 # Create DataFrame from lists of lists
@@ -1127,7 +1131,7 @@ hungarian['agebinned'] = pd.cut(x=hungarian.age, bins=5, labels = ['0', '1', '2'
 
 # Add boxcox'd variables to continuous_variables list
 continuous_variables.extend([x for x in list(hungarian) if 'boxcox' in x])
-# Add iteraction variables to continuous_variables list
+# Add interaction variables to continuous_variables list
 continuous_variables.extend([x for x in list(hungarian) if 'div_by' in x])
 
 # Correlations > 0.6 and < 1.0 and <-0.6 and >-1.0, drop all null columns
@@ -1417,7 +1421,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 top_model_results['model_type'] = top_model_results['model_type'].fillna(value='logit')
 
 
-### Random forest classifer ###
+### Random forest classifier ###
 ### Can create ensemble models using different training sets (bagging)
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
@@ -1460,7 +1464,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                                                      max_features=grid_search.best_params_['max_features'],
                                                      n_estimators=grid_search.best_params_['n_estimators'],
                                                      random_state=1)
-        # Cross-validate and predict using Random Forest Classifer
+        # Cross-validate and predict using Random Forest Classifier
         random_forest_predict = cross_val_predict(random_forest_model, x, y, cv=5)
         print(confusion_matrix(y_true=y, y_pred=random_forest_predict))
         conf_matr = confusion_matrix(y_true=y, y_pred=random_forest_predict)
@@ -1492,7 +1496,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
                     continue
             else:
                 break
-    # Create DataFrame of random forest classifer results
+    # Create DataFrame of random forest classifier results
     model_search_rfc = pd.DataFrame(model_search_rfc, columns=['best_model_params_grid_search', 'best_score_grid_search',
                                                  'true_negatives', 'false_positives',
                                                  'false_negatives', 'true_positives', 'variables_not_used'])
@@ -1531,7 +1535,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 top_model_results['model_type'] = top_model_results['model_type'].fillna(value='rfc')
 
 
-### Support-vector machine classifer
+### Support-vector machine classifier
 # Unique variable combination runs
 for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_list,
                                                               categorical_variables_for_modeling_list), start=1):
@@ -1564,7 +1568,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
     grid_search = GridSearchCV(svc_model, param_grid, cv=cv)
 
     # Loop through features based on recursive feature elimination evaluation - top to bottom
-    model_search_svc = []
+    model_search_svc = [] 
     svc_variable_list = []
     for i in range(len(rfe_svc)):
         if rfe_svc['variable'][i] not in svc_variable_list:
@@ -1576,10 +1580,10 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
             grid_search.fit(x_std[svc_variable_list], y)
             print(f'Best parameters for current grid seach: {grid_search.best_params_}')
             print(f'Best score for current grid seach: {grid_search.best_score_}')
-            # Define parameters of Support-vector machine classifer from grid search
+            # Define parameters of Support-vector machine classifier from grid search
             svc_model = SVC(kernel=grid_search.best_params_['kernel'], C=grid_search.best_params_['C'],
                             gamma=grid_search.best_params_['gamma'], random_state=1)
-            # Cross-validate and predict using Support-vector machine classifer
+            # Cross-validate and predict using Support-vector machine classifier
             svc_predict = cross_val_predict(svc_model, x_std[svc_variable_list], y, cv=5)
             print(confusion_matrix(y_true=y, y_pred=svc_predict))
             conf_matr = confusion_matrix(y_true=y, y_pred=svc_predict)
@@ -1651,7 +1655,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 
     # Define parameters of Random Forest Classifier
     random_forest_model = RandomForestClassifier(random_state=1)
-    # Merge feature importances from random forest classifer on feature_info
+    # Merge feature importances from random forest classifier on feature_info
     feature_info = feature_info.merge(pd.DataFrame(data=[list(x), random_forest_model.fit(x,y).feature_importances_.tolist()]).T.\
         rename(columns={0: 'variable', 1: 'feature_importance_rfc'}), on='variable')
     # Sort values by descending random forest classifier feature importance to create ranking column
@@ -1660,7 +1664,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
 
     # Define parameters of Gradient Boosting Classifier
     gbm_model = GradientBoostingClassifier(random_state=1)
-    # Merge feature importances from gradient boosting classifer on feature_info
+    # Merge feature importances from gradient boosting classifier on feature_info
     feature_info = feature_info.merge(pd.DataFrame(data=[list(x), gbm_model.fit(x,y).feature_importances_.tolist()]).T.\
         rename(columns={0: 'variable', 1: 'feature_importance_gbm'}), on='variable')
     # Sort values by descending gradient boosting classifier feature importance to create ranking column
@@ -1697,7 +1701,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
             # Define parameters of k-nearest neighbors from grid search
             knn_model = KNeighborsClassifier(metric='minkowski', n_neighbors=grid_search.best_params_['n_neighbors'],
                             weights=grid_search.best_params_['weights'])
-            # Cross-validate and predict using Support-vector machine classifer
+            # Cross-validate and predict using Support-vector machine classifier
             knn_predict = cross_val_predict(knn_model, x_std[knn_variable_list], y, cv=5)
             print(confusion_matrix(y_true=y, y_pred=knn_predict))
             conf_matr = confusion_matrix(y_true=y, y_pred=knn_predict)
@@ -1895,7 +1899,7 @@ for index, (vars_to_drop, cat_vars_to_model) in enumerate(zip(variables_to_drop_
             #     x = x.drop(columns=bottom_variable)
             else:
                 break
-    # Create DataFrame of random forest classifer results
+    # Create DataFrame of random forest classifier results
     model_search_gbm = pd.DataFrame(model_search_gbm, columns=['model_params_grid_search',
                                                  'true_negatives', 'false_positives',
                                                  'false_negatives', 'true_positives', 'variables_not_used'])
@@ -1964,32 +1968,34 @@ except NameError:
         y = pickle.load(hungarian_target_variable_pkl)
 
 # Dict of model names and their spelled out verions
-model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifer', 'knn': 'K-Nearest Neighbors',
-                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifer'}
+model_names_spelled_out = {'logit': 'Logistic Regression', 'rfc': 'Random Forest Classifier', 'knn': 'K-Nearest Neighbors',
+                           'svc': 'Support Vector Machine Classifier', 'gbm': 'Gradient Boosting Classifier'}
 
 # Build ROC Curves for all models which give prediction probabilities (i.e. all but SVC)
 # Set figsize to size of second monitor
 plt.rcParams['figure.figsize'] = [19.2, 9.99]
-# Histograms for all continuous variable against num
 fig, axes = plt.subplots(nrows=2, ncols=2)
-fig.subplots_adjust(left=0.10, right=0.90, top=0.90, bottom=0.10, hspace=0.35, wspace=0.20)
+fig.subplots_adjust(left=0.05, right=0.87, top=0.90, bottom=0.07, hspace=0.35, wspace=0.20)
 fig.suptitle('ROC (Receiver Operating Characteristic) Curves', fontweight= 'bold', fontsize= 22)
 for ax, value in zip(axes.flatten(), list(unique_everseen([x.split("_")[0] for x in all_model_results.columns if 'pred' in x]))):
     # ROC Curve plot
-    # plt.figure(figsize=(13,7.5))
-    # Draw ROC Curves for all logit models on one plot
     for pred_one_col in [x for x in all_model_results.columns if (x[0:len(value)] == value) & (x[-len('pred_one'):] == 'pred_one')]:
         fpr, tpr, thresholds = roc_curve(y, all_model_results[pred_one_col])
         ax.plot(fpr, tpr, label=pred_one_col.split("_")[1])
         ax.plot([0, 1], [0, 1],'r--')
         ax.set_xlim([0.0, 1.0])
         ax.set_ylim([0.0, 1.05])
-        ax.set_xlabel('False Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
-        ax.set_ylabel('True Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18})
+        ax.set_xlabel('False Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18}, labelpad=15)
+        ax.set_ylabel('True Positive Rate', fontdict={'fontweight': 'bold', 'fontsize': 18}, labelpad=15)
         ax.set_title(f'{model_names_spelled_out[value]} Models', fontdict={'fontweight': 'bold', 'fontsize': 24})
 handles, legends = ax.get_legend_handles_labels()
 legends = ['Model ' + legend.title() for legend in legends]
-fig.legend(handles, legends, loc='upper left', bbox_to_anchor=(0.90, 0.85), prop={'weight':'bold'})
+fig.legend(handles, legends, loc='upper left', bbox_to_anchor=(0.87, 0.85), prop={'weight':'bold', 'size':16})
+# Expand figure to desired size first before running below code (this makes xtick and ytick labels appear and then can therefore be bolded)
+for ax in axes.flatten():
+    ax.set_yticklabels(labels=ax.get_yticklabels(), fontweight="bold")
+    ax.set_xticklabels(labels=ax.get_xticklabels(), fontweight="bold")
+
 
 # Re-assign index of top_model_results
 top_model_results.index = list(itertools.chain.from_iterable(itertools.repeat(range(1,8), 5)))
@@ -2119,15 +2125,15 @@ tick_labels = ['No Presence of Heart Disease', 'Presence of Heart Disease']
 # Set figsize to size of second monitor
 plt.rcParams['figure.figsize'] = [19.2, 9.99]
 fig, axes = plt.subplots(nrows=1, ncols=1)
-fig.subplots_adjust(left=0.21, right=0.81, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
-sns.heatmap(conf_matrix, annot=labels, annot_kws={"size": 24, "weight": "bold"}, fmt='', xticklabels=tick_labels,
+fig.subplots_adjust(left=0.07, right=0.99, top=0.94, bottom=0.11)
+sns.heatmap(conf_matrix, annot=labels, annot_kws={"size": 26, "weight": "bold"}, fmt='', xticklabels=tick_labels,
             yticklabels=tick_labels, cbar=False, cmap=['#b2abd2', '#e66101'],
             center=model_search_all.loc[model_search_all.cols==('svc_four',)][["false_positives", "false_negatives"]].values.max())
-plt.xticks(weight="bold", size=16)
-plt.yticks(rotation=90, va='center', weight="bold", size=16)
-plt.ylabel('True Value of Patient', weight="bold", size=20, labelpad=30)
-plt.xlabel('Predicted Value of Patient', weight="bold", size=20, labelpad=30)
-plt.title('Prediction Results for Support Vector Machine Classifier Model #4', pad = 15, fontdict={"weight": "bold", "size": 26})
+plt.xticks(weight="bold", size=20)
+plt.yticks(rotation=90, va='center', weight="bold", size=20)
+plt.ylabel('True Value of Patient', weight="bold", size=24, labelpad=30)
+plt.xlabel('Predicted Value of Patient', weight="bold", size=24, labelpad=30)
+plt.title('Prediction Results for Support Vector Machine Classifier Model #4', pad=15, fontdict={"weight": "bold", "size": 28})
 plt.show()
 
 # Build stacked bar chart
@@ -2161,7 +2167,7 @@ colors = {"Correctly Predicted": "#e66101", "Incorrectly Predicted": "#b2abd2"}
 # Set figsize to size of second monitor
 plt.rcParams['figure.figsize'] = [19.2,9.99]
 fig, axes = plt.subplots(nrows=1, ncols=1)
-fig.subplots_adjust(left=0.19, right=0.83, top=0.90, bottom=0.12, hspace=0.7, wspace = 0.25)
+fig.subplots_adjust(left=0.01, right=0.99, top=0.95, bottom=0.12)
 sns_stacked_bar_plot = sns.barplot(x=stacked_bar_chart['Patient Outcomes'], y=stacked_bar_chart.total,
           hue=stacked_bar_chart['hue_label'], palette=colors, dodge=False)
 sns_stacked_bar_plot = sns.barplot(x=stacked_bar_chart['Patient Outcomes'], y=stacked_bar_chart.minimum,
@@ -2170,34 +2176,35 @@ for p in sns_stacked_bar_plot.patches:
     print(p._height)
     if p._height in stacked_bar_chart.total.values:
         sns_stacked_bar_plot.annotate(int(p._height -
-                                      stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0]), (p.get_x() + p.get_width() / 2., (p._height -
+                                      stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0]),
+                                      (p.get_x() + p.get_width() / 2., (p._height -
                                       stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0])/2 +
                                       stacked_bar_chart.loc[stacked_bar_chart.total==p._height, 'minimum'].values[0]),
-                                      ha='center', va='center', weight='bold', fontsize=18)
+                                      ha='center', va='center', weight='bold', fontsize=30)
         # Add totals above bars
         sns_stacked_bar_plot.annotate(int(p._height), (p.get_x() + p.get_width() / 2., p.get_height()), ha='center',
-                       va='center', xytext=(0, 10), textcoords='offset points', weight='bold', fontsize=20)
+                       va='center', xytext=(0, 12), textcoords='offset points', weight='bold', fontsize=30)
     elif p._height in stacked_bar_chart.minimum.values:
         print(p._height, p._height/2)
         sns_stacked_bar_plot.annotate(int(p._height), (p.get_x() + p.get_width() / 2., p._height/2),
-                                      ha='center', va='center', weight='bold', fontsize=18)
+                                      ha='center', va='center', weight='bold', fontsize=30)
 # Set edge color to black for bars
 for patch in sns_stacked_bar_plot.patches:
     patch.set_edgecolor('black')
-plt.xticks(weight="bold", size=16)
-# plt.yticks(weight="bold", size=16)
+    patch.set_linewidth(5)
+plt.xticks(weight="bold", size=30)
 plt.yticks([])
-plt.xlabel('Patient Outcomes', weight="bold", size=18, labelpad=20)
+plt.xlabel('Patient Outcomes', weight="bold", size=28, labelpad=20)
 plt.ylabel('')
-plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 24},
+plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 28},
           pad=10.0)
-plt.legend(title="Legend", prop={'weight':'bold', 'size': 15})
+plt.legend(title="", prop={'weight':'bold', 'size': 20})
 # Add 10 onto y to account for pad
 plt.text(x=0.7, y=(stacked_bar_chart.total.max() - stacked_bar_chart.total.min())/2 + stacked_bar_chart.total.min()+10,
          s = "Overall Accuracy: " + "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
         ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
                                      +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])),
-         fontdict={"weight": "bold", "size": 22}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
+         fontdict={"weight": "bold", "size": 40}, bbox=dict(facecolor='none', edgecolor='black', pad=10.0, linewidth=3))
 plt.show()
 
 # Bar chart of confusion matrix results
@@ -2205,8 +2212,6 @@ bar_chart = model_search_all.loc[model_search_all.cols==('svc_four',)][["true_ne
                                                                         "false_negatives", "true_positives"]]
 
 # Rename column names accordingly
-# for col in bar_chart.columns:
-#     bar_chart = bar_chart.rename(columns={col: col.replace("_", " ").title()})
 bar_chart = bar_chart.rename(columns={'true_negatives': 'Correctly Predicted To\nNot Have Heart Disease',
                           'false_positives': 'Incorrectly Predicted To\nHave Heart Disease',
                           'false_negatives': 'Incorrectly Predicted To\nNot Have Heart Disease',
@@ -2238,7 +2243,7 @@ plt.yticks(weight="bold", size=16)
 plt.xlabel('Patient Outcomes', weight="bold", size=18, labelpad=20)
 plt.ylabel('')
 plt.title('Prediction Results for Support Vector Machine Classifier Model #4', fontdict={"weight": "bold", "size": 24})
-plt.legend(title="Legend", prop={'weight':'bold', 'size': 15})
+plt.legend(title="", prop={'weight':'bold', 'size': 15})
 plt.text(x=1.05, y=140, s = "Overall Accuracy: " + "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
         ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
                                      +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])),
@@ -2250,17 +2255,17 @@ plt.figure()
 x = np.linspace(-2, 2, 1500)
 y1 = np.lib.scimath.sqrt(1-(abs(x)-1)**2)
 y2 = -3 * np.lib.scimath.sqrt(1-(abs(x)/2)**0.5)
-plt.fill_between(x, y1, where = x>.7, color=colors['Incorrectly Predicted'])
-plt.fill_between(x, y1, where = x<=.7, color=colors['Correctly Predicted'])
+plt.fill_between(x, y1, where=x > .7, color=colors['Incorrectly Predicted'])
+plt.fill_between(x, y1, where=x <= .7, color=colors['Correctly Predicted'])
 plt.fill_between(x, y2, color=colors['Correctly Predicted'])
-plt.xlim([-2.5, 3.7])
+plt.xlim([-2.7, 4.5])
 correctly_predicted_patch = mpatches.Patch(color=colors['Correctly Predicted'],
                            label="".join([key for key, value in colors.items() if value == colors['Correctly Predicted']]))
 incorrectly_predicted_patch = mpatches.Patch(color=colors['Incorrectly Predicted'],
                            label="".join([key for key, value in colors.items() if value == colors['Incorrectly Predicted']]))
 plt.legend(title="Patient Outcomes", handles=[correctly_predicted_patch, incorrectly_predicted_patch],
-           prop={'weight':'bold', 'size': 15}, title_fontsize=18)
-# Add text if wanted
+           prop={'weight':'bold', 'size': 16}, title_fontsize=18, bbox_to_anchor=(.97, 1.08))
+# Add text to display overall accuracy if desired
 # plt.text(0, -1.2, "{:.1%}".format(model_search_all.loc[model_search_all.cols==('svc_four',)]
 #         ['total_correct'].values[0]/(model_search_all.loc[model_search_all.cols==('svc_four',)]['total_correct'].values[0]
 #         +model_search_all.loc[model_search_all.cols==('svc_four',)]['total_wrong'].values[0])), fontsize=50, fontweight='bold',
